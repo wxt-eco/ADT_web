@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADT 学业勤奋任务</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #14141a; color: #fff;
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+  .screen { position: fixed; inset: 0; }
+  .hidden { display: none !important; }
+  .center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 40px; text-align: center; }
+  h1 { font-size: 42px; }
+  h2 { font-size: 30px; }
+  .sub { color: #aaa; font-size: 16px; }
+  .form label { display: block; margin: 14px; font-size: 20px; }
+  .form input { margin-left: 8px; padding: 8px 12px; font-size: 20px; border-radius: 6px; border: 1px solid #555; background: #222; color: #fff; }
+  .btn { padding: 12px 44px; font-size: 22px; border-radius: 8px; border: none; background: #2d6cdf; color: #fff; cursor: pointer; }
+  .btn:hover { background: #3b7bf0; }
+  #instr-body { max-width: 760px; font-size: 20px; line-height: 1.9; white-space: pre-wrap; }
+
+  .topbar { height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 22px; background: #1d1d24; }
+  .topbar.center-top { justify-content: center; }
+
+  /* 分屏 */
+  #main-split { display: flex; height: calc(100% - 54px); }
+  .panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+  #left-panel { background: #232330; }
+  #right-panel { background: #181820; }
+  .panel.active { box-shadow: inset 0 0 0 4px #ffd400; }
+  .panel-title { position: absolute; top: 16px; color: #999; font-size: 18px; }
+  .problem { font-size: 120px; font-weight: bold; }
+  .typed { font-size: 80px; color: #66d9ff; min-height: 100px; }
+  .hint { color: #888; margin-top: 10px; font-size: 16px; }
+
+  .dist-top { padding: 14px; display: flex; justify-content: center; }
+  .dist-select { font-size: 18px; padding: 8px 12px; border-radius: 6px; background: #2a2a3a; color: #fff; border: 1px solid #777; max-width: 92%; }
+  #dist-area { flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; overflow: hidden; }
+  #tetris-canvas { background: #0b0b0e; height: 76vh; }
+  #video-el { max-width: 100%; max-height: 76vh; }
+  .paused-note { position: absolute; bottom: 16px; color: #ffcc00; font-size: 20px; }
+  .placeholder { color: #999; font-size: 18px; }
+
+  /* 练习(全屏数学) */
+  .math-center { height: calc(100% - 54px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; }
+  .practice-label { color: #ffd400; font-size: 22px; }
+</style>
+</head>
+<body>
+
+<!-- 开始页 -->
+<div id="screen-start" class="screen center">
+  <h1>学业勤奋任务</h1>
+  <p class="sub">Academic Diligence Task (Galla et al., 2014)</p>
+  <div class="form">
+    <label>被试编号 <input id="participant" type="text" value="" placeholder="如 001"></label>
+    <label>场次 <input id="session" type="text" value="001"></label>
+  </div>
+  <button id="btn-start" class="btn">开始实验</button>
+</div>
+
+<!-- 说明页 -->
+<div id="screen-instructions" class="screen center hidden">
+  <h2 id="instr-title"></h2>
+  <div id="instr-body"></div>
+  <button id="btn-continue" class="btn">继续(空格)</button>
+</div>
+
+<!-- 练习页 -->
+<div id="screen-practice" class="screen hidden">
+  <div class="topbar"><span class="practice-label">练习阶段(仅数学)</span><span id="practice-timer"></span></div>
+  <div class="math-center">
+    <div id="practice-problem" class="problem"></div>
+    <div id="practice-typed" class="typed"></div>
+    <div class="hint">输入答案后按回车</div>
+  </div>
+</div>
+
+<!-- 任务页(分屏) -->
+<div id="screen-task" class="screen hidden">
+  <div class="topbar center-top"><span id="task-timer"></span></div>
+  <div id="main-split">
+    <div id="left-panel" class="panel">
+      <div class="panel-title">数学练习</div>
+      <div id="task-problem" class="problem"></div>
+      <div id="task-typed" class="typed"></div>
+      <div class="hint">输入答案后按回车 · 点击左侧继续</div>
+    </div>
+    <div id="right-panel" class="panel">
+      <div class="dist-top">
+        <select id="dist-select" class="dist-select"></select>
+      </div>
+      <div id="dist-area">
+        <canvas id="tetris-canvas"></canvas>
+        <video id="video-el" playsinline></video>
+        <div id="video-placeholder" class="placeholder hidden">视频加载失败</div>
+      </div>
+      <div id="paused-note" class="paused-note hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 块间过渡 -->
+<div id="screen-pause" class="screen center hidden">
+  <h2 id="pause-text"></h2>
+</div>
+
+<!-- 结束页 -->
+<div id="screen-end" class="screen center hidden">
+  <h2>实验结束,感谢参与!</h2>
+  <div id="submit-status" style="color:#66d9ff;"></div>
+  <button id="btn-download" class="btn">下载数据(CSV)</button>
+</div>
+
+<script>
+// ============================================================
+//  CONFIG —— 只改这里即可
+// ============================================================
+const CONFIG = {
+  // 实验时长(原版:60 秒练习 + 5 个 4 分钟块 = 20 分钟)
+  practiceSeconds: 60,
+  blockSeconds: 4 * 60,
+  nBlocks: 5,
+
+  // 数学题:false 表示结果非负(0~9);true 可出现负数(需按 - 号)
+  allowNegative: false,
+
+  // ---------- 数据提交 ----------
+  // 把你的接口地址填在这里,例如:
+  //   submitUrl: "https://your-server.com/api/adt/submit",
+  // 留空则只下载 CSV,不提交。
+  submitUrl: "",
+  submitMethod: "POST",
+  // "json" = 提交 JSON 给后端;  "form" = 表单编码提交(适配 Google Forms / Apps Script 等)
+  submitFormat: "json",
+
+  // ---------- 视频(相对 index.html 的路径,放在 videos/ 文件夹里)----------
+  // 有几个视频,右侧下拉菜单里就有几个选项(以文件名命名),带声音播放。
+  videos: [
+    "videos/喜羊羊与灰太狼.mp4",
+    "videos/奶龙.mp4",
+    "videos/小黄人.mp4",
+    "videos/巴啦啦小魔仙.mp4",
+    "videos/王者荣耀.mp4",
+  ],
+};
+
+// ============================================================
+//  工具
+// ============================================================
+const $ = (id) => document.getElementById(id);
+const round3 = (n) => Math.round(n * 1000) / 1000;
+const basename = (p) => p.split('/').pop();
+
+function generateProblem() {
+  let a = Math.floor(Math.random() * 10);
+  let b = Math.floor(Math.random() * 10);
+  if (!CONFIG.allowNegative && b > a) { const t = a; a = b; b = t; }
+  return { a, b, ans: a - b, problem: a + "-" + b, text: a + " - " + b + " = ?" };
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+  $(id).classList.remove('hidden');
+}
+
+// ============================================================
+//  俄罗斯方块
+// ============================================================
+const PIECES = {
+  I: [[0,1],[1,1],[2,1],[3,1]],
+  O: [[1,0],[2,0],[1,1],[2,1]],
+  T: [[1,0],[0,1],[1,1],[2,1]],
+  S: [[1,0],[2,0],[0,1],[1,1]],
+  Z: [[0,0],[1,0],[1,1],[2,1]],
+  J: [[0,0],[0,1],[1,1],[2,1]],
+  L: [[2,0],[0,1],[1,1],[2,1]],
+};
+const TET_COLORS = { I:'#00d9f0', O:'#ffd400', T:'#a040e0', S:'#33cc55', Z:'#e02020', J:'#2040e0', L:'#ff8c00' };
+
+class Tetris {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.cols = 10; this.rows = 20; this.cell = 28;
+    canvas.width = this.cols * this.cell;
+    canvas.height = this.rows * this.cell;
+    this.reset();
+  }
+  reset() {
+    this.grid = Array.from({ length: this.rows }, () => new Array(this.cols).fill(null));
+    this.fallAcc = 0; this.fallInterval = 0.5;
+    this.gameOver = false; this.lines = 0;
+    this.spawn();
+  }
+  spawn() {
+    const kinds = Object.keys(PIECES);
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+    this.cur = { kind, cells: PIECES[kind].map(c => c.slice()), x: 3, y: 0 };
+    if (this.collides(this.cur.cells, this.cur.x, this.cur.y)) {
+      this.gameOver = true; this.cur = null;
+    }
+  }
+  collides(cells, x, y) {
+    for (const [cx, cy] of cells) {
+      const bx = x + cx, by = y + cy;
+      if (bx < 0 || bx >= this.cols || by >= this.rows) return true;
+      if (by >= 0 && this.grid[by][bx]) return true;
+    }
+    return false;
+  }
+  move(dx) {
+    if (this.cur && !this.gameOver && !this.collides(this.cur.cells, this.cur.x + dx, this.cur.y)) this.cur.x += dx;
+  }
+  softDrop() {
+    if (this.cur && !this.gameOver) {
+      if (!this.collides(this.cur.cells, this.cur.x, this.cur.y + 1)) this.cur.y++;
+      else this.lock();
+    }
+  }
+  hardDrop() {
+    if (this.cur && !this.gameOver) {
+      while (!this.collides(this.cur.cells, this.cur.x, this.cur.y + 1)) this.cur.y++;
+      this.lock();
+    }
+  }
+  rotate() {
+    if (!this.cur || this.gameOver) return;
+    const cells = this.cur.cells.map(([x, y]) => [3 - y, x]);
+    for (const dx of [0, -1, 1, -2, 2]) {
+      if (!this.collides(cells, this.cur.x + dx, this.cur.y)) { this.cur.cells = cells; this.cur.x += dx; return; }
+    }
+  }
+  lock() {
+    if (!this.cur) return;
+    for (const [cx, cy] of this.cur.cells) {
+      const bx = this.cur.x + cx, by = this.cur.y + cy;
+      if (by < 0) this.gameOver = true;
+      else if (by < this.rows && bx >= 0 && bx < this.cols) this.grid[by][bx] = this.cur.kind;
+    }
+    this.clearLines();
+    this.spawn();
+  }
+  clearLines() {
+    const kept = this.grid.filter(row => row.some(c => c === null));
+    const cleared = this.rows - kept.length;
+    this.lines += cleared;
+    while (kept.length < this.rows) kept.unshift(new Array(this.cols).fill(null));
+    this.grid = kept;
+  }
+  update(dt) {
+    if (!this.cur || this.gameOver) return;
+    this.fallAcc += dt;
+    while (this.fallAcc >= this.fallInterval) {
+      this.fallAcc -= this.fallInterval;
+      if (!this.collides(this.cur.cells, this.cur.x, this.cur.y + 1)) this.cur.y++;
+      else { this.lock(); break; }
+    }
+  }
+  draw() {
+    const ctx = this.ctx, c = this.cell;
+    ctx.fillStyle = '#0b0b0e';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    for (let r = 0; r < this.rows; r++) for (let col = 0; col < this.cols; col++) {
+      const kind = this.grid[r][col];
+      if (kind) { ctx.fillStyle = TET_COLORS[kind]; ctx.fillRect(col * c + 1, r * c + 1, c - 2, c - 2); }
+    }
+    if (this.cur && !this.gameOver) {
+      ctx.fillStyle = TET_COLORS[this.cur.kind];
+      for (const [cx, cy] of this.cur.cells) {
+        const bx = this.cur.x + cx, by = this.cur.y + cy;
+        if (by >= 0) ctx.fillRect(bx * c + 1, by * c + 1, c - 2, c - 2);
+      }
+    }
+  }
+}
+
+const tetris = new Tetris($('tetris-canvas'));
+const videoEl = $('video-el');
+
+// ============================================================
+//  全局状态
+// ============================================================
+let mode = 'start';                    // start | instructions | practice | task | pause | end
+let activeSide = 'math';               // 'math' | 'distraction'
+let distMode = 'tetris';               // 'tetris' | 'video:0' ...
+let currentVideoSrc = null;
+let curProblem = null;
+let typed = '';
+let blockIndex = 0;
+let nAttempted = 0, nCorrect = 0;
+let timeMath = 0, timeTetris = 0, timeVideo = 0;
+let participant = '', session = '';
+let problemsData = [], blocksData = [], switchesData = [];
+let blockStartTs = 0;
+let continueCb = null;
+
+// ============================================================
+//  说明文字
+// ============================================================
+const INSTRUCTIONS =
+  "欢迎参加本实验!\n\n" +
+  "接下来是一个关于「学习」的活动。屏幕会分成两个区域:\n\n" +
+  "  左侧 —— 数学练习:这些题目能帮助你锻炼和提高解题能力,对学业很有帮助。\n\n" +
+  "  右侧 —— 游戏或视频:点击右侧顶部的下拉菜单,可选择玩俄罗斯方块或看视频。\n\n" +
+  "你可以自己决定如何分配时间:做数学、玩游戏或看视频都可以,\n" +
+  "随时用鼠标点击对应区域(或按 Tab 键)进行切换。\n\n" +
+  "顶部会显示当前阶段和剩余时间。";
+
+const MAIN_INSTRUCTIONS =
+  "练习结束!\n\n" +
+  "现在进入正式实验,共 5 个阶段,每个阶段 4 分钟。\n\n" +
+  "你可以自由切换:\n" +
+  "  点击左侧 → 做数学\n" +
+  "  点击右侧顶部下拉菜单 → 选择俄罗斯方块或某个视频\n" +
+  "  或按 Tab 键快速切换\n\n" +
+  "每个阶段时间到后会自动进入下一阶段。";
+
+// ============================================================
+//  界面切换
+// ============================================================
+function showInstructions(title, body, onContinue) {
+  mode = 'instructions';
+  showScreen('screen-instructions');
+  $('instr-title').textContent = title;
+  $('instr-body').textContent = body;
+  continueCb = onContinue;
+}
+function continueInstructions() {
+  const cb = continueCb; continueCb = null;
+  if (cb) cb();
+}
+
+function populateSelect() {
+  const sel = $('dist-select');
+  sel.innerHTML = '<option value="tetris">俄罗斯方块</option>';
+  CONFIG.videos.forEach((src, i) => {
+    const opt = document.createElement('option');
+    opt.value = 'video:' + i;
+    opt.textContent = basename(src);
+    sel.appendChild(opt);
+  });
+}
+
+function updateActiveHighlight() {
+  $('left-panel').classList.toggle('active', activeSide === 'math');
+  $('right-panel').classList.toggle('active', activeSide === 'distraction');
+  const note = $('paused-note');
+  note.textContent = (distMode === 'tetris') ? '已暂停 · 点击右侧继续游戏' : '已暂停 · 点击右侧继续';
+  note.classList.toggle('hidden', activeSide === 'distraction');
+}
+
+function updateDistractionView() {
+  const isVideo = distMode.startsWith('video:');
+  $('tetris-canvas').style.display = isVideo ? 'none' : 'block';
+  $('video-el').style.display = isVideo ? 'block' : 'none';
+  $('video-placeholder').style.display = 'none';
+}
+
+function playVideo(src) {
+  if (currentVideoSrc !== src) {
+    currentVideoSrc = src;
+    videoEl.src = src;
+    videoEl.load();
+  }
+  videoEl.play().then(() => {
+    $('video-placeholder').style.display = 'none';
+  }).catch(() => {
+    $('video-placeholder').style.display = 'block';
+  });
+}
+videoEl.addEventListener('error', () => {
+  if (distMode.startsWith('video:')) $('video-placeholder').style.display = 'block';
+});
+
+function changeState(side, dm) {
+  const from = (activeSide === 'math') ? 'math' : distMode;
+  const to = (side === 'math') ? 'math' : dm;
+  if (from !== to && blockStartTs) {
+    switchesData.push({
+      block: blockIndex,
+      t: round3((performance.now() - blockStartTs) / 1000),
+      from: from, to: to,
+    });
+  }
+  activeSide = side;
+  distMode = dm;
+  updateActiveHighlight();
+  updateDistractionView();
+  if (dm.startsWith('video:')) {
+    if (side === 'distraction') playVideo(CONFIG.videos[parseInt(dm.slice(6))]);
+    else videoEl.pause();
+  } else {
+    videoEl.pause();
+  }
+}
+
+// ============================================================
+//  数学输入
+// ============================================================
+function renderMath() {
+  const pEl = (mode === 'practice') ? $('practice-problem') : $('task-problem');
+  const tEl = (mode === 'practice') ? $('practice-typed') : $('task-typed');
+  pEl.textContent = curProblem.text;
+  tEl.textContent = typed || '_';
+}
+
+function handleMathKey(e) {
+  if (e.key >= '0' && e.key <= '9' && typed.length < 3) { typed += e.key; renderMath(); }
+  else if (e.key === 'Backspace') { typed = typed.slice(0, -1); renderMath(); }
+  else if (e.key === '-' && CONFIG.allowNegative && typed === '') { typed = '-'; renderMath(); }
+  else if (e.key === 'Enter') submitMath();
+}
+
+function submitMath() {
+  const ans = parseInt(typed, 10);
+  const correct = (!isNaN(ans) && ans === curProblem.ans) ? 1 : 0;
+  if (mode === 'task') {
+    nAttempted++; nCorrect += correct;
+    problemsData.push({ block: blockIndex, problem: curProblem.problem, response: typed, correct: correct });
+  }
+  typed = '';
+  curProblem = generateProblem();
+  renderMath();
+}
+
+// ============================================================
+//  键盘 / 鼠标
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  if (mode === 'instructions') {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); continueInstructions(); }
+    return;
+  }
+  if (mode === 'practice') { handleMathKey(e); return; }
+  if (mode === 'task') {
+    if (e.key === 'Tab') { e.preventDefault(); toggleActive(); return; }
+    if (activeSide === 'math') handleMathKey(e);
+    else if (distMode === 'tetris') handleTetrisKey(e);
+    return;
+  }
+});
+
+function handleTetrisKey(e) {
+  if (e.key === 'ArrowLeft') { e.preventDefault(); tetris.move(-1); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); tetris.move(1); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); tetris.softDrop(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); tetris.rotate(); }
+  else if (e.key === ' ') { e.preventDefault(); tetris.hardDrop(); }
+}
+
+function toggleActive() {
+  changeState((activeSide === 'math') ? 'distraction' : 'math', distMode);
+}
+
+$('left-panel').addEventListener('click', () => changeState('math', distMode));
+$('right-panel').addEventListener('click', (e) => {
+  if (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION') return;
+  changeState('distraction', distMode);
+});
+$('dist-select').addEventListener('change', (e) => {
+  changeState('distraction', e.target.value);
+});
+
+// ============================================================
+//  流程
+// ============================================================
+$('btn-start').addEventListener('click', () => {
+  participant = $('participant').value.trim() || '未命名';
+  session = $('session').value.trim() || '001';
+  showInstructions('实验说明', INSTRUCTIONS, startPractice);
+});
+$('btn-continue').addEventListener('click', continueInstructions);
+
+function startPractice() {
+  mode = 'practice';
+  showScreen('screen-practice');
+  curProblem = generateProblem(); typed = '';
+  renderMath();
+  const start = performance.now();
+  const durMs = CONFIG.practiceSeconds * 1000;
+  function frame(ts) {
+    const remain = (durMs - (ts - start)) / 1000;
+    $('practice-timer').textContent = '剩余 ' + Math.ceil(remain) + ' 秒';
+    if (remain <= 0) { showInstructions('正式开始', MAIN_INSTRUCTIONS, startBlocks); return; }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function startBlocks() {
+  mode = 'task';
+  showScreen('screen-task');
+  populateSelect();
+  activeSide = 'math'; distMode = 'tetris';
+  $('dist-select').value = 'tetris';
+  currentVideoSrc = null;
+  videoEl.pause(); videoEl.removeAttribute('src'); videoEl.load();
+  updateActiveHighlight(); updateDistractionView();
+  blockIndex = 0;
+  runNextBlock();
+}
+
+function runNextBlock() {
+  if (blockIndex >= CONFIG.nBlocks) { endExperiment(); return; }
+  blockIndex++;
+  nAttempted = 0; nCorrect = 0;
+  timeMath = 0; timeTetris = 0; timeVideo = 0;
+  tetris.reset();
+  activeSide = 'math';
+  videoEl.pause();
+  updateActiveHighlight();
+  curProblem = generateProblem(); typed = ''; renderMath();
+
+  const start = performance.now();
+  blockStartTs = start;
+  const durMs = CONFIG.blockSeconds * 1000;
+  let lastTs = start;
+  function frame(ts) {
+    const dt = (ts - lastTs) / 1000; lastTs = ts;
+
+    if (activeSide === 'math') timeMath += dt;
+    else if (distMode === 'tetris') timeTetris += dt;
+    else timeVideo += dt;
+
+    if (distMode === 'tetris') {
+      if (activeSide === 'distraction') tetris.update(dt);
+      tetris.draw();
+    }
+
+    const remain = (durMs - (ts - start)) / 1000;
+    $('task-timer').textContent = '第 ' + blockIndex + '/' + CONFIG.nBlocks + ' 块   剩余 ' + Math.ceil(remain) + ' 秒';
+    if (remain <= 0) {
+      videoEl.pause();
+      blocksData.push({
+        block: blockIndex,
+        time_math: round3(timeMath), time_tetris: round3(timeTetris), time_video: round3(timeVideo),
+        n_attempted: nAttempted, n_correct: nCorrect,
+      });
+      if (blockIndex < CONFIG.nBlocks) {
+        mode = 'pause';
+        showScreen('screen-pause');
+        $('pause-text').textContent = '第 ' + blockIndex + ' 块结束,准备下一块...';
+        setTimeout(runNextBlock, 1500);
+      } else {
+        endExperiment();
+      }
+      return;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+// ============================================================
+//  数据:提交 + 下载
+// ============================================================
+function buildCSV() {
+  const header = ['type','block','problem','response','correct','time_math','time_tetris','time_video','n_attempted','n_correct'];
+  const rows = [header];
+  for (const p of problemsData) rows.push(['problem', p.block, p.problem, p.response, p.correct, '', '', '', '', '']);
+  for (const b of blocksData) rows.push(['block', b.block, '', '', '', b.time_math, b.time_tetris, b.time_video, b.n_attempted, b.n_correct]);
+  return rows.map(r => r.map(csvCell).join(',')).join('\n');
+}
+function csvCell(v) {
+  v = String(v == null ? '' : v);
+  if (/[",\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
+  return v;
+}
+
+function downloadCSV() {
+  const blob = new Blob(['﻿' + buildCSV()], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ADT_' + participant + '_' + session + '_' + Date.now() + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+async function submitData() {
+  const payload = {
+    meta: {
+      participant, session,
+      submittedAt: new Date().toISOString(),
+      ua: navigator.userAgent,
+      screen: [window.screen.width, window.screen.height],
+    },
+    blocks: blocksData,
+    problems: problemsData,
+    switches: switchesData,
+  };
+  const statusEl = $('submit-status');
+  if (!CONFIG.submitUrl) {
+    statusEl.textContent = '未配置提交地址(请填 CONFIG.submitUrl),请点击下方按钮下载数据。';
+    return;
+  }
+  statusEl.textContent = '正在提交数据...';
+  try {
+    let resp;
+    if (CONFIG.submitFormat === 'form') {
+      const params = new URLSearchParams();
+      params.append('participant', participant);
+      params.append('session', session);
+      params.append('data', JSON.stringify(payload));
+      resp = await fetch(CONFIG.submitUrl, {
+        method: CONFIG.submitMethod || 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params,
+      });
+    } else {
+      resp = await fetch(CONFIG.submitUrl, {
+        method: CONFIG.submitMethod || 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    }
+    if (resp.ok) statusEl.textContent = '数据已成功提交 ✓';
+    else statusEl.textContent = '提交失败(HTTP ' + resp.status + '),请下载 CSV 手动回传。';
+  } catch (err) {
+    statusEl.textContent = '提交出错:' + err.message + ',请下载 CSV 手动回传。';
+  }
+}
+
+$('btn-download').addEventListener('click', downloadCSV);
+
+// ============================================================
+//  结束
+// ============================================================
+function endExperiment() {
+  mode = 'end';
+  showScreen('screen-end');
+  submitData();
+}
+</script>
+</body>
+</html>
