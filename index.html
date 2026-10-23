@@ -46,6 +46,12 @@
   .paused-note { position: absolute; bottom: 16px; color: #ffcc00; font-size: 20px; }
   .placeholder { color: #999; font-size: 18px; }
 
+  /* 块后评定 */
+  .rating-q { font-size: 30px; margin: 6px 0 26px; }
+  .rating-opts { display: flex; flex-direction: column; gap: 14px; }
+  .rating-btn { padding: 14px 40px; font-size: 24px; border-radius: 8px; border: 1px solid #666; background: #22242e; color: #fff; cursor: pointer; min-width: 360px; }
+  .rating-btn:hover { background: #2d6cdf; }
+
   /* 练习(全屏数学) */
   .math-center { height: calc(100% - 54px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; }
   .practice-label { color: #ffd400; font-size: 22px; }
@@ -105,9 +111,16 @@
   </div>
 </div>
 
-<!-- 块间过渡 -->
-<div id="screen-pause" class="screen center hidden">
-  <h2 id="pause-text"></h2>
+<!-- 块后评定 -->
+<div id="screen-rating" class="screen center hidden">
+  <h2 id="rating-block-title"></h2>
+  <div class="rating-q">上一阶段的数学任务让你感到多无聊?</div>
+  <div class="rating-opts">
+    <button class="rating-btn" data-v="1">1 = 完全不无聊</button>
+    <button class="rating-btn" data-v="2">2 = 不无聊</button>
+    <button class="rating-btn" data-v="3">3 = 有点无聊</button>
+    <button class="rating-btn" data-v="4">4 = 非常无聊</button>
+  </div>
 </div>
 
 <!-- 结束页 -->
@@ -139,7 +152,7 @@ const CONFIG = {
   // "json" = 提交 JSON 给后端;  "form" = 表单编码提交(适配 Google Forms / Apps Script 等)
   submitFormat: "json",
 
-  // ---------- 视频(相对 index.html 的路径,放在 videos/ 文件夹里)----------
+  // ---------- 视频(相对 index.html 的路径,放在 main 文件夹里)----------
   // 有几个视频,右侧下拉菜单里就有几个选项(以文件名命名),带声音播放。
   videos: [
     "./喜羊羊与灰太狼.mp4",
@@ -296,7 +309,7 @@ let blockIndex = 0;
 let nAttempted = 0, nCorrect = 0;
 let timeMath = 0, timeTetris = 0, timeVideo = 0;
 let participant = '', session = '';
-let problemsData = [], blocksData = [], switchesData = [];
+let problemsData = [], blocksData = [], switchesData = [], ratingsData = [];
 let blockStartTs = 0;
 let continueCb = null;
 
@@ -437,6 +450,10 @@ document.addEventListener('keydown', (e) => {
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); continueInstructions(); }
     return;
   }
+  if (mode === 'rating') {
+    if (e.key >= '1' && e.key <= '4') submitRating(parseInt(e.key, 10));
+    return;
+  }
   if (mode === 'practice') { handleMathKey(e); return; }
   if (mode === 'task') {
     if (e.key === 'Tab') { e.preventDefault(); toggleActive(); return; }
@@ -542,14 +559,7 @@ function runNextBlock() {
         time_math: round3(timeMath), time_tetris: round3(timeTetris), time_video: round3(timeVideo),
         n_attempted: nAttempted, n_correct: nCorrect,
       });
-      if (blockIndex < CONFIG.nBlocks) {
-        mode = 'pause';
-        showScreen('screen-pause');
-        $('pause-text').textContent = '第 ' + blockIndex + ' 块结束,准备下一块...';
-        setTimeout(runNextBlock, 1500);
-      } else {
-        endExperiment();
-      }
+      askBoredom();
       return;
     }
     requestAnimationFrame(frame);
@@ -561,10 +571,11 @@ function runNextBlock() {
 //  数据:提交 + 下载
 // ============================================================
 function buildCSV() {
-  const header = ['type','block','problem','response','correct','time_math','time_tetris','time_video','n_attempted','n_correct'];
+  const header = ['type','block','problem','response','correct','boredom','time_math','time_tetris','time_video','n_attempted','n_correct'];
   const rows = [header];
-  for (const p of problemsData) rows.push(['problem', p.block, p.problem, p.response, p.correct, '', '', '', '', '']);
-  for (const b of blocksData) rows.push(['block', b.block, '', '', '', b.time_math, b.time_tetris, b.time_video, b.n_attempted, b.n_correct]);
+  for (const p of problemsData) rows.push(['problem', p.block, p.problem, p.response, p.correct, '', '', '', '', '', '']);
+  for (const b of blocksData) rows.push(['block', b.block, '', '', '', '', b.time_math, b.time_tetris, b.time_video, b.n_attempted, b.n_correct]);
+  for (const r of ratingsData) rows.push(['rating', r.block, '', '', '', r.boredom, '', '', '', '', '']);
   return rows.map(r => r.map(csvCell).join(',')).join('\n');
 }
 function csvCell(v) {
@@ -594,6 +605,7 @@ async function submitData() {
     blocks: blocksData,
     problems: problemsData,
     switches: switchesData,
+    ratings: ratingsData,
   };
   const statusEl = $('submit-status');
   if (!CONFIG.submitUrl) {
@@ -630,6 +642,23 @@ async function submitData() {
 $('btn-download').addEventListener('click', downloadCSV);
 
 // ============================================================
+//  块后评定(无聊程度)
+// ============================================================
+function askBoredom() {
+  mode = 'rating';
+  showScreen('screen-rating');
+  $('rating-block-title').textContent = '第 ' + blockIndex + ' 块已结束';
+}
+function submitRating(v) {
+  ratingsData.push({ block: blockIndex, boredom: v });
+  if (blockIndex < CONFIG.nBlocks) runNextBlock();
+  else endExperiment();
+}
+document.querySelectorAll('.rating-btn').forEach(btn => {
+  btn.addEventListener('click', () => submitRating(parseInt(btn.dataset.v, 10)));
+});
+
+// ============================================================
 //  结束
 // ============================================================
 function endExperiment() {
@@ -640,3 +669,4 @@ function endExperiment() {
 </script>
 </body>
 </html>
+
