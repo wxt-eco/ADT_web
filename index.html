@@ -42,6 +42,7 @@
   .dist-select { font-size: 18px; padding: 8px 12px; border-radius: 6px; background: #2a2a3a; color: #fff; border: 1px solid #777; max-width: 92%; }
   #dist-area { flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; overflow: hidden; }
   #tetris-canvas { background: #0b0b0e; height: 76vh; }
+  #mines-canvas, #spider-canvas { background: #1a1a22; }
   #video-el { max-width: 100%; max-height: 76vh; }
   .paused-note { position: absolute; bottom: 16px; color: #ffcc00; font-size: 20px; }
   .placeholder { color: #999; font-size: 18px; }
@@ -103,6 +104,8 @@
       </div>
       <div id="dist-area">
         <canvas id="tetris-canvas"></canvas>
+        <canvas id="mines-canvas"></canvas>
+        <canvas id="spider-canvas"></canvas>
         <video id="video-el" playsinline></video>
         <div id="video-placeholder" class="placeholder hidden">视频加载失败</div>
       </div>
@@ -293,7 +296,283 @@ class Tetris {
   }
 }
 
+// ============================================================
+//  扫雷(9×9 / 10 雷)
+// ============================================================
+class Minesweeper {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.cols = 9; this.rows = 9; this.mines = 10;
+    this.cell = 34; this.topH = 34;
+    canvas.width = this.cols * this.cell;
+    canvas.height = this.topH + this.rows * this.cell;
+    this.reset();
+  }
+  reset() {
+    this.status = 'play';
+    this.grid = Array.from({ length: this.rows }, () =>
+      Array.from({ length: this.cols }, () => ({ mine: false, adj: 0, revealed: false, flagged: false }))
+    );
+    let n = 0;
+    while (n < this.mines) {
+      const r = Math.floor(Math.random() * this.rows), c = Math.floor(Math.random() * this.cols);
+      if (!this.grid[r][c].mine) { this.grid[r][c].mine = true; n++; }
+    }
+    for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
+      if (this.grid[r][c].mine) continue;
+      let a = 0;
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const rr = r + dr, cc = c + dc;
+        if (rr >= 0 && rr < this.rows && cc >= 0 && cc < this.cols && this.grid[rr][cc].mine) a++;
+      }
+      this.grid[r][c].adj = a;
+    }
+  }
+  flagCount() {
+    let n = 0;
+    for (const row of this.grid) for (const d of row) if (d.flagged) n++;
+    return n;
+  }
+  reveal(r, c) {
+    const d = this.grid[r][c];
+    if (!d || d.revealed || d.flagged || this.status !== 'play') return;
+    if (d.mine) { d.revealed = true; this.status = 'lose'; for (const row of this.grid) for (const x of row) if (x.mine) x.revealed = true; return; }
+    const stack = [[r, c]];
+    while (stack.length) {
+      const [rr, cc] = stack.pop();
+      const cur = this.grid[rr][cc];
+      if (!cur || cur.revealed || cur.flagged || cur.mine) continue;
+      cur.revealed = true;
+      if (cur.adj === 0) {
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          const nr = rr + dr, nc = cc + dc;
+          if (nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols) stack.push([nr, nc]);
+        }
+      }
+    }
+    if (this.won()) { this.status = 'win'; for (const row of this.grid) for (const x of row) if (x.mine) x.flagged = true; }
+  }
+  flag(r, c) {
+    const d = this.grid[r][c];
+    if (!d || d.revealed || this.status !== 'play') return;
+    d.flagged = !d.flagged;
+  }
+  won() {
+    for (const row of this.grid) for (const d of row) if (!d.mine && !d.revealed) return false;
+    return true;
+  }
+  handleMouse(e, isFlag) {
+    const p = canvasPos(this.canvas, e);
+    if (p.y < this.topH) { this.reset(); this.draw(); return; }
+    const c = Math.floor(p.x / this.cell);
+    const r = Math.floor((p.y - this.topH) / this.cell);
+    if (r < 0 || r >= this.rows || c < 0 || c >= this.cols) return;
+    if (isFlag) this.flag(r, c); else this.reveal(r, c);
+    this.draw();
+  }
+  draw() {
+    const ctx = this.ctx, cell = this.cell, topH = this.topH;
+    ctx.fillStyle = '#1a1a22';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '18px "Microsoft YaHei"';
+    ctx.fillStyle = '#ffd400';
+    ctx.fillText('💣' + (this.mines - this.flagCount()), 24, topH / 2);
+    ctx.font = '22px sans-serif';
+    const face = this.status === 'win' ? '😎' : this.status === 'lose' ? '😵' : '🙂';
+    ctx.fillText(face, this.canvas.width / 2, topH / 2);
+    ctx.font = 'bold 20px "Microsoft YaHei"';
+    for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
+      const x = c * cell, y = topH + r * cell;
+      const d = this.grid[r][c];
+      if (d.revealed) {
+        ctx.fillStyle = '#3a3a48';
+        ctx.fillRect(x, y, cell - 1, cell - 1);
+        if (d.mine) { ctx.fillText('💣', x + cell / 2, y + cell / 2); }
+        else if (d.adj > 0) {
+          ctx.fillStyle = ['#66d9ff', '#33cc55', '#e02020', '#a040e0', '#ff8c00', '#00d9f0', '#ffd400', '#ccc'][d.adj - 1];
+          ctx.fillText(String(d.adj), x + cell / 2, y + cell / 2);
+        }
+      } else {
+        ctx.fillStyle = '#4a4a5a';
+        ctx.fillRect(x, y, cell - 1, cell - 1);
+        if (d.flagged) ctx.fillText('🚩', x + cell / 2, y + cell / 2);
+      }
+    }
+  }
+}
+
+// ============================================================
+//  蜘蛛纸牌(1 花色简化版,点击移动)
+// ============================================================
+class Spider {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.cardW = 54; this.cardH = 76;
+    this.pileW = 60; this.left = 3; this.topY = 90;
+    canvas.width = this.left + 10 * this.pileW + this.left;
+    canvas.height = 470;
+    this.stockRect = { x: canvas.width - 110, y: 6, w: 100, h: this.cardH - 8 };
+    this.reset();
+  }
+  reset() {
+    const deck = [];
+    for (let i = 0; i < 8; i++) for (let r = 1; r <= 13; r++) deck.push({ rank: r });
+    for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
+    this.piles = Array.from({ length: 10 }, () => []);
+    let idx = 0;
+    for (let p = 0; p < 10; p++) {
+      const n = p < 4 ? 6 : 5;
+      for (let k = 0; k < n; k++) this.piles[p].push({ rank: deck[idx++].rank, up: false });
+      this.piles[p][this.piles[p].length - 1].up = true;
+    }
+    this.stock = deck.slice(idx).map(c => ({ rank: c.rank, up: false }));
+    this.selected = null;
+    this.completed = 0;
+  }
+  pileLayout(pi) {
+    const pile = this.piles[pi];
+    const x = this.left + pi * this.pileW;
+    const out = [];
+    const nUp = pile.filter(c => c.up).length;
+    const avail = this.canvas.height - this.topY - 8;
+    let upGap = 22;
+    if (nUp > 1) upGap = Math.min(22, Math.max(6, (avail - this.cardH) / (nUp - 1)));
+    let y = this.topY;
+    for (const c of pile) { out.push({ x, y }); y += c.up ? upGap : 8; }
+    return out;
+  }
+  cardIndexAt(pi, y) {
+    const layout = this.pileLayout(pi);
+    for (let i = layout.length - 1; i >= 0; i--) {
+      if (y >= layout[i].y && y < layout[i].y + this.cardH) return i;
+    }
+    return -1;
+  }
+  isRunFrom(pi, ci) {
+    const pile = this.piles[pi];
+    for (let i = ci; i < pile.length; i++) {
+      if (!pile[i].up) return false;
+      if (i > ci && pile[i].rank !== pile[i - 1].rank - 1) return false;
+    }
+    return true;
+  }
+  canPlace(run, destPile) {
+    const pile = this.piles[destPile];
+    if (pile.length === 0) return true;
+    const top = pile[pile.length - 1];
+    return top.up && top.rank === run[0].rank + 1;
+  }
+  afterMove() {
+    for (let p = 0; p < 10; p++) {
+      const pile = this.piles[p];
+      if (pile.length < 13) continue;
+      const top = pile.slice(-13);
+      let full = true;
+      for (let i = 0; i < 13; i++) if (!top[i].up || top[i].rank !== 13 - i) { full = false; break; }
+      if (full) {
+        this.piles[p] = pile.slice(0, pile.length - 13);
+        const np = this.piles[p];
+        if (np.length && !np[np.length - 1].up) np[np.length - 1].up = true;
+        this.completed++;
+      }
+    }
+  }
+  tryMove(destPile) {
+    const sel = this.selected;
+    if (!sel) return false;
+    if (sel.pile === destPile) { this.selected = null; return false; }
+    const src = this.piles[sel.pile];
+    const run = src.slice(sel.index);
+    if (!this.canPlace(run, destPile)) return false;
+    this.piles[destPile] = this.piles[destPile].concat(run);
+    this.piles[sel.pile] = src.slice(0, sel.index);
+    const ns = this.piles[sel.pile];
+    if (ns.length && !ns[ns.length - 1].up) ns[ns.length - 1].up = true;
+    this.selected = null;
+    this.afterMove();
+    return true;
+  }
+  deal() {
+    if (this.stock.length === 0) return;
+    for (let p = 0; p < 10; p++) if (this.piles[p].length === 0) return;
+    for (let p = 0; p < 10; p++) { const c = this.stock.pop(); c.up = true; this.piles[p].push(c); }
+    this.selected = null;
+    this.afterMove();
+  }
+  handleClick(e) {
+    const p = canvasPos(this.canvas, e);
+    if (this.completed >= 8) { this.reset(); this.draw(); return; }
+    const sr = this.stockRect;
+    if (p.x >= sr.x && p.x <= sr.x + sr.w && p.y >= sr.y && p.y <= sr.y + sr.h) { this.deal(); this.draw(); return; }
+    const pi = Math.floor((p.x - this.left) / this.pileW);
+    if (pi < 0 || pi >= 10) return;
+    const ci = this.cardIndexAt(pi, p.y);
+    if (ci === -1) {
+      if (this.selected) this.tryMove(pi);
+      this.draw();
+      return;
+    }
+    const card = this.piles[pi][ci];
+    if (!card.up) { this.selected = null; this.draw(); return; }
+    if (this.selected && this.tryMove(pi)) { this.draw(); return; }
+    if (this.isRunFrom(pi, ci)) this.selected = { pile: pi, index: ci };
+    else this.selected = null;
+    this.draw();
+  }
+  draw() {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#0d6b3a';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    const sr = this.stockRect;
+    ctx.fillStyle = this.stock.length ? '#2a4a7a' : '#333';
+    ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
+    ctx.strokeStyle = '#000'; ctx.strokeRect(sr.x, sr.y, sr.w, sr.h);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Microsoft YaHei"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('发牌 ' + Math.ceil(this.stock.length / 10), sr.x + sr.w / 2, sr.y + sr.h / 2);
+    ctx.textAlign = 'left';
+    ctx.fillText('已完成 ' + this.completed + '/8', 10, sr.y + sr.h / 2);
+    for (let p = 0; p < 10; p++) {
+      const pile = this.piles[p];
+      const layout = this.pileLayout(p);
+      if (pile.length === 0) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.strokeRect(this.left + p * this.pileW, this.topY, this.cardW, this.cardH);
+      }
+      for (let i = 0; i < pile.length; i++) {
+        const card = pile[i], pos = layout[i];
+        const sel = this.selected && this.selected.pile === p && i >= this.selected.index;
+        if (card.up) {
+          ctx.fillStyle = sel ? '#ffd400' : '#ffffff';
+          ctx.fillRect(pos.x, pos.y, this.cardW, this.cardH);
+          ctx.strokeStyle = '#000'; ctx.strokeRect(pos.x, pos.y, this.cardW, this.cardH);
+          ctx.fillStyle = '#000'; ctx.font = 'bold 18px "Microsoft YaHei"'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+          ctx.fillText(rankLabel(card.rank), pos.x + this.cardW / 2, pos.y + 4);
+          ctx.fillText('♠', pos.x + this.cardW / 2, pos.y + this.cardH - 24);
+        } else {
+          ctx.fillStyle = '#2a4a7a';
+          ctx.fillRect(pos.x, pos.y, this.cardW, this.cardH);
+          ctx.strokeStyle = '#000'; ctx.strokeRect(pos.x, pos.y, this.cardW, this.cardH);
+        }
+      }
+    }
+    if (this.completed >= 8) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.fillStyle = '#ffd400'; ctx.font = 'bold 26px "Microsoft YaHei"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('你赢了!点击重新开始', this.canvas.width / 2, this.canvas.height / 2);
+    }
+  }
+}
+
+function rankLabel(r) { return r === 1 ? 'A' : r === 11 ? 'J' : r === 12 ? 'Q' : r === 13 ? 'K' : String(r); }
+function canvasPos(canvas, e) { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+
 const tetris = new Tetris($('tetris-canvas'));
+const mines = new Minesweeper($('mines-canvas'));
+const spider = new Spider($('spider-canvas'));
 const videoEl = $('video-el');
 
 // ============================================================
@@ -307,7 +586,7 @@ let curProblem = null;
 let typed = '';
 let blockIndex = 0;
 let nAttempted = 0, nCorrect = 0;
-let timeMath = 0, timeTetris = 0, timeVideo = 0;
+let timeMath = 0, timeTetris = 0, timeVideo = 0, timeMines = 0, timeSpider = 0;
 let participant = '', session = '';
 let problemsData = [], blocksData = [], switchesData = [], ratingsData = [];
 let blockStartTs = 0;
@@ -351,7 +630,9 @@ function continueInstructions() {
 
 function populateSelect() {
   const sel = $('dist-select');
-  sel.innerHTML = '<option value="tetris">俄罗斯方块</option>';
+  sel.innerHTML = '<option value="tetris">俄罗斯方块</option>' +
+                  '<option value="minesweeper">扫雷</option>' +
+                  '<option value="spider">蜘蛛纸牌</option>';
   CONFIG.videos.forEach((src, i) => {
     const opt = document.createElement('option');
     opt.value = 'video:' + i;
@@ -370,7 +651,9 @@ function updateActiveHighlight() {
 
 function updateDistractionView() {
   const isVideo = distMode.startsWith('video:');
-  $('tetris-canvas').style.display = isVideo ? 'none' : 'block';
+  $('tetris-canvas').style.display = (distMode === 'tetris') ? 'block' : 'none';
+  $('mines-canvas').style.display = (distMode === 'minesweeper') ? 'block' : 'none';
+  $('spider-canvas').style.display = (distMode === 'spider') ? 'block' : 'none';
   $('video-el').style.display = isVideo ? 'block' : 'none';
   $('video-placeholder').style.display = 'none';
 }
@@ -484,6 +767,24 @@ $('dist-select').addEventListener('change', (e) => {
   changeState('distraction', e.target.value);
 });
 
+// 扫雷 / 蜘蛛纸牌 的鼠标交互(左键/右键;仅任务中有效)
+$('mines-canvas').addEventListener('mousedown', (e) => {
+  if (mode !== 'task') return;
+  if (activeSide !== 'distraction' || distMode !== 'minesweeper') changeState('distraction', 'minesweeper');
+  if (e.button === 0) mines.handleMouse(e, false);
+});
+$('mines-canvas').addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (mode !== 'task') return;
+  if (activeSide !== 'distraction' || distMode !== 'minesweeper') changeState('distraction', 'minesweeper');
+  mines.handleMouse(e, true);
+});
+$('spider-canvas').addEventListener('mousedown', (e) => {
+  if (mode !== 'task') return;
+  if (activeSide !== 'distraction' || distMode !== 'spider') changeState('distraction', 'spider');
+  if (e.button === 0) spider.handleClick(e);
+});
+
 // ============================================================
 //  流程
 // ============================================================
@@ -528,8 +829,8 @@ function runNextBlock() {
   mode = 'task';
   blockIndex++;
   nAttempted = 0; nCorrect = 0;
-  timeMath = 0; timeTetris = 0; timeVideo = 0;
-  tetris.reset();
+  timeMath = 0; timeTetris = 0; timeVideo = 0; timeMines = 0; timeSpider = 0;
+  tetris.reset(); mines.reset(); spider.reset();
   activeSide = 'math';
   videoEl.pause();
   updateActiveHighlight();
@@ -545,11 +846,17 @@ function runNextBlock() {
 
     if (activeSide === 'math') timeMath += dt;
     else if (distMode === 'tetris') timeTetris += dt;
+    else if (distMode === 'minesweeper') timeMines += dt;
+    else if (distMode === 'spider') timeSpider += dt;
     else timeVideo += dt;
 
     if (distMode === 'tetris') {
       if (activeSide === 'distraction') tetris.update(dt);
       tetris.draw();
+    } else if (distMode === 'minesweeper') {
+      mines.draw();
+    } else if (distMode === 'spider') {
+      spider.draw();
     }
 
     const remain = (durMs - (ts - start)) / 1000;
@@ -559,6 +866,7 @@ function runNextBlock() {
       blocksData.push({
         block: blockIndex,
         time_math: round3(timeMath), time_tetris: round3(timeTetris), time_video: round3(timeVideo),
+        time_minesweeper: round3(timeMines), time_spider: round3(timeSpider),
         n_attempted: nAttempted, n_correct: nCorrect,
         accuracy: nAttempted ? round3(nCorrect / nAttempted) : null,
       });
@@ -581,22 +889,24 @@ function buildCSV() {
   const totalMath = blocksData.reduce((s, b) => s + b.time_math, 0);
   const totalTetris = blocksData.reduce((s, b) => s + b.time_tetris, 0);
   const totalVideo = blocksData.reduce((s, b) => s + b.time_video, 0);
+  const totalMines = blocksData.reduce((s, b) => s + b.time_minesweeper, 0);
+  const totalSpider = blocksData.reduce((s, b) => s + b.time_spider, 0);
   const totalAttempted = blocksData.reduce((s, b) => s + b.n_attempted, 0);
   const totalCorrect = blocksData.reduce((s, b) => s + b.n_correct, 0);
 
-  row(['participant', 'session', 'block', 'time_math_sec', 'time_tetris_sec', 'time_video_sec', 'time_total_sec', 'n_attempted', 'n_correct', 'accuracy', 'boredom']);
+  row(['participant', 'session', 'block', 'time_math_sec', 'time_tetris_sec', 'time_video_sec', 'time_minesweeper_sec', 'time_spider_sec', 'time_total_sec', 'n_attempted', 'n_correct', 'accuracy', 'boredom']);
   for (const b of blocksData) {
     const r = ratingsData.find(x => x.block === b.block);
     row([participant, session, b.block,
-         b.time_math, b.time_tetris, b.time_video,
-         round3(b.time_math + b.time_tetris + b.time_video),
+         b.time_math, b.time_tetris, b.time_video, b.time_minesweeper, b.time_spider,
+         round3(b.time_math + b.time_tetris + b.time_video + b.time_minesweeper + b.time_spider),
          b.n_attempted, b.n_correct,
          b.n_attempted ? round3(b.n_correct / b.n_attempted) : '',
          r ? r.boredom : '']);
   }
   row([participant, session, 'total',
-       round3(totalMath), round3(totalTetris), round3(totalVideo),
-       round3(totalMath + totalTetris + totalVideo),
+       round3(totalMath), round3(totalTetris), round3(totalVideo), round3(totalMines), round3(totalSpider),
+       round3(totalMath + totalTetris + totalVideo + totalMines + totalSpider),
        totalAttempted, totalCorrect,
        totalAttempted ? round3(totalCorrect / totalAttempted) : '', '']);
 
