@@ -148,10 +148,9 @@ const CONFIG = {
   allowNegative: false,
 
   // ---------- 数据提交 ----------
-  // 换成你的腾讯云服务器公网 IP,保持 /submit 结尾(部署见 ADT_server/README.md):
-  //   例如 http://123.45.67.89/submit
-  // 留空则只下载 CSV,不提交。
-  submitUrl: "http://62.234.133.125/submit",
+  // 提交到你的腾讯云服务器(已配 HTTPS 域名 wxt-eco.com,部署见 ADT_server/README.md):
+  //   留空则只下载 CSV,不提交。
+  submitUrl: "https://wxt-eco.com/submit",
   submitMethod: "POST",
   // "json" = 提交 JSON 给后端;  "form" = 表单编码提交(适配 Google Forms / Apps Script 等)
   submitFormat: "form",
@@ -809,6 +808,7 @@ async function submitData() {
       params.append('session', session);
       params.append('data', JSON.stringify(payload));
 
+      let lastErr = '';
       // 用 fetch 提交:后端(server.py)已开启 CORS,能准确读到服务器是否成功。
       try {
         const resp = await fetch(CONFIG.submitUrl, {
@@ -827,7 +827,7 @@ async function submitData() {
         highlightDownload();
         return;
       } catch (e) {
-        // 网络失败/被拦截 → 走 sendBeacon 兜底
+        lastErr = 'fetch被拦:' + ((e && e.message) || String(e));
       }
 
       // sendBeacon 兜底(不读响应,返回 true 仅代表已排队,不代表送达)
@@ -836,12 +836,14 @@ async function submitData() {
         try {
           const blob = new Blob([params.toString()], { type: 'application/x-www-form-urlencoded' });
           beaconOk = navigator.sendBeacon(CONFIG.submitUrl, blob);
-        } catch (e) {}
+        } catch (e) {
+          lastErr += ' / beacon被拦:' + ((e && e.message) || String(e));
+        }
       }
       if (beaconOk) {
         statusEl.textContent = '数据已发送(无法确认送达,请同时下载 CSV 备份)';
       } else {
-        statusEl.textContent = '自动提交失败,请点击下方按钮下载 CSV 回传给主试。';
+        statusEl.textContent = '自动提交失败[' + lastErr + '],请下载 CSV 回传。';
         highlightDownload();
       }
       return;
