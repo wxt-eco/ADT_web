@@ -150,10 +150,10 @@ const CONFIG = {
   // 把你的接口地址填在这里,例如:
   //   submitUrl: "https://your-server.com/api/adt/submit",
   // 留空则只下载 CSV,不提交。
-  submitUrl: "",
+  submitUrl: "https://script.google.com/macros/s/AKfycbxMPiBCYxyGyLX7P6ObMqTGY_wHjsGcEfgu5wUdzJZ5eMs5Yy4dxiuqkzwfqIJ4LRr_kg/exec",
   submitMethod: "POST",
   // "json" = 提交 JSON 给后端;  "form" = 表单编码提交(适配 Google Forms / Apps Script 等)
-  submitFormat: "json",
+  submitFormat: "form",
 
   // ---------- 视频(相对 index.html 的路径,放在 main 文件夹里)----------
   // 有几个视频,右侧下拉菜单里就有几个选项(以文件名命名),带声音播放。
@@ -599,17 +599,21 @@ const INSTRUCTIONS =
   "欢迎参加本实验!\n\n" +
   "接下来是一个关于「学习」的活动。屏幕会分成两个区域:\n\n" +
   "  左侧 —— 数学练习:这些题目能帮助你锻炼和提高解题能力,对学业很有帮助。\n\n" +
-  "  右侧 —— 游戏或视频:点击右侧顶部的下拉菜单,可选择玩俄罗斯方块或看视频。\n\n" +
+  "  右侧 —— 游戏或视频:点击右侧顶部的下拉菜单,可选择玩俄罗斯方块、扫雷、蜘蛛纸牌或看视频。\n\n" +
   "你可以自己决定如何分配时间:做数学、玩游戏或看视频都可以,\n" +
   "随时用鼠标点击对应区域(或按 Tab 键)进行切换。\n\n" +
   "顶部会显示当前阶段和剩余时间。";
 
+function fmtDur(sec) {
+  return sec >= 60 ? (sec / 60) + ' 分钟' : sec + ' 秒';
+}
+
 const MAIN_INSTRUCTIONS =
   "练习结束!\n\n" +
-  "现在进入正式实验,共 5 个阶段,每个阶段 4 分钟。\n\n" +
+  "现在进入正式实验,共 " + CONFIG.nBlocks + " 个阶段,每个阶段 " + fmtDur(CONFIG.blockSeconds) + "。\n\n" +
   "你可以自由切换:\n" +
   "  点击左侧 → 做数学\n" +
-  "  点击右侧顶部下拉菜单 → 选择俄罗斯方块或某个视频\n" +
+  "  点击右侧顶部下拉菜单 → 选择俄罗斯方块、扫雷、蜘蛛纸牌或某个视频\n" +
   "  或按 Tab 键快速切换\n\n" +
   "每个阶段时间到后会自动进入下一阶段。";
 
@@ -827,6 +831,7 @@ function startBlocks() {
 function runNextBlock() {
   if (blockIndex >= CONFIG.nBlocks) { endExperiment(); return; }
   mode = 'task';
+  showScreen('screen-task');
   blockIndex++;
   nAttempted = 0; nCorrect = 0;
   timeMath = 0; timeTetris = 0; timeVideo = 0; timeMines = 0; timeSpider = 0;
@@ -958,24 +963,27 @@ async function submitData() {
   }
   statusEl.textContent = '正在提交数据...';
   try {
-    let resp;
     if (CONFIG.submitFormat === 'form') {
+      // 表单方式:适配 Google Apps Script / Google Forms。
+      // 用 no-cors 发出,避免浏览器跨域读响应报错;数据会送达,但前端无法确认状态。
       const params = new URLSearchParams();
       params.append('participant', participant);
       params.append('session', session);
       params.append('data', JSON.stringify(payload));
-      resp = await fetch(CONFIG.submitUrl, {
+      await fetch(CONFIG.submitUrl, {
         method: CONFIG.submitMethod || 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: params,
+        mode: 'no-cors',
       });
-    } else {
-      resp = await fetch(CONFIG.submitUrl, {
-        method: CONFIG.submitMethod || 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      statusEl.textContent = '数据已发送(表单方式不返回状态,建议同时下载 CSV 备份)';
+      return;
     }
+    const resp = await fetch(CONFIG.submitUrl, {
+      method: CONFIG.submitMethod || 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
     if (resp.ok) statusEl.textContent = '数据已成功提交 ✓';
     else statusEl.textContent = '提交失败(HTTP ' + resp.status + '),请下载 CSV 手动回传。';
   } catch (err) {
