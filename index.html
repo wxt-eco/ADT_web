@@ -22,6 +22,8 @@
   .form input { margin-left: 8px; padding: 8px 12px; font-size: 20px; border-radius: 6px; border: 1px solid #555; background: #222; color: #fff; }
   .btn { padding: 12px 44px; font-size: 22px; border-radius: 8px; border: none; background: #2d6cdf; color: #fff; cursor: pointer; }
   .btn:hover { background: #3b7bf0; }
+  .btn.danger { background: #e0682d; animation: btnPulse 1.1s ease-in-out infinite; }
+  @keyframes btnPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(224,104,45,.65); } 50% { box-shadow: 0 0 0 18px rgba(224,104,45,0); } }
   #instr-body { max-width: 760px; font-size: 20px; line-height: 1.9; white-space: pre-wrap; }
 
   .topbar { height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 22px; background: #1d1d24; }
@@ -770,6 +772,13 @@ function downloadCSV() {
   a.remove();
 }
 
+function highlightDownload() {
+  const btn = $('btn-download');
+  if (!btn) return;
+  btn.classList.add('danger');
+  btn.textContent = '下载数据(CSV) — 请回传给主试';
+}
+
 async function submitData() {
   const now = new Date();
   const payload = {
@@ -801,13 +810,28 @@ async function submitData() {
       params.append('participant', participant);
       params.append('session', session);
       params.append('data', JSON.stringify(payload));
-      await fetch(CONFIG.submitUrl, {
-        method: CONFIG.submitMethod || 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params,
-        mode: 'no-cors',
-      });
-      statusEl.textContent = '数据已发送(表单方式不返回状态,建议同时下载 CSV 备份)';
+      let sent = false;
+      try {
+        await fetch(CONFIG.submitUrl, {
+          method: CONFIG.submitMethod || 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params,
+          mode: 'no-cors',
+        });
+        sent = true;
+      } catch (e) {
+        // fetch 被拦截/网络失败 → 用 sendBeacon 兜底(不读响应,部分拦截场景仍能送达)
+        if (navigator.sendBeacon) {
+          const blob = new Blob([params.toString()], { type: 'application/x-www-form-urlencoded' });
+          sent = navigator.sendBeacon(CONFIG.submitUrl, blob);
+        }
+      }
+      if (sent) {
+        statusEl.textContent = '数据已发送(建议同时下载 CSV 备份)';
+      } else {
+        statusEl.textContent = '自动提交失败,请点击下方按钮下载 CSV 回传给主试。';
+        highlightDownload();
+      }
       return;
     }
     const resp = await fetch(CONFIG.submitUrl, {
@@ -815,10 +839,15 @@ async function submitData() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (resp.ok) statusEl.textContent = '数据已成功提交 ✓';
-    else statusEl.textContent = '提交失败(HTTP ' + resp.status + '),请下载 CSV 手动回传。';
+    if (resp.ok) {
+      statusEl.textContent = '数据已成功提交 ✓';
+    } else {
+      statusEl.textContent = '提交失败(HTTP ' + resp.status + '),请下载 CSV 手动回传。';
+      highlightDownload();
+    }
   } catch (err) {
     statusEl.textContent = '提交出错:' + err.message + ',请下载 CSV 手动回传。';
+    highlightDownload();
   }
 }
 
