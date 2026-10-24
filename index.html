@@ -42,7 +42,7 @@
   .dist-select { font-size: 18px; padding: 8px 12px; border-radius: 6px; background: #2a2a3a; color: #fff; border: 1px solid #777; max-width: 92%; }
   #dist-area { flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; overflow: hidden; }
   #tetris-canvas { background: #0b0b0e; height: 76vh; }
-  #mines-canvas, #spider-canvas { background: #1a1a22; }
+  #mines-canvas { background: #1a1a22; }
   #video-el { max-width: 100%; max-height: 76vh; }
   .paused-note { position: absolute; bottom: 16px; color: #ffcc00; font-size: 20px; }
   .placeholder { color: #999; font-size: 18px; }
@@ -105,7 +105,6 @@
       <div id="dist-area">
         <canvas id="tetris-canvas"></canvas>
         <canvas id="mines-canvas"></canvas>
-        <canvas id="spider-canvas"></canvas>
         <video id="video-el" playsinline></video>
         <div id="video-placeholder" class="placeholder hidden">视频加载失败</div>
       </div>
@@ -407,176 +406,10 @@ class Minesweeper {
   }
 }
 
-// ============================================================
-//  蜘蛛纸牌(1 花色简化版,点击移动)
-// ============================================================
-class Spider {
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    this.cardW = 54; this.cardH = 76;
-    this.pileW = 60; this.left = 3; this.topY = 90;
-    canvas.width = this.left + 10 * this.pileW + this.left;
-    canvas.height = 470;
-    this.stockRect = { x: canvas.width - 110, y: 6, w: 100, h: this.cardH - 8 };
-    this.reset();
-  }
-  reset() {
-    const deck = [];
-    for (let i = 0; i < 8; i++) for (let r = 1; r <= 13; r++) deck.push({ rank: r });
-    for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
-    this.piles = Array.from({ length: 10 }, () => []);
-    let idx = 0;
-    for (let p = 0; p < 10; p++) {
-      const n = p < 4 ? 6 : 5;
-      for (let k = 0; k < n; k++) this.piles[p].push({ rank: deck[idx++].rank, up: false });
-      this.piles[p][this.piles[p].length - 1].up = true;
-    }
-    this.stock = deck.slice(idx).map(c => ({ rank: c.rank, up: false }));
-    this.selected = null;
-    this.completed = 0;
-  }
-  pileLayout(pi) {
-    const pile = this.piles[pi];
-    const x = this.left + pi * this.pileW;
-    const out = [];
-    const nUp = pile.filter(c => c.up).length;
-    const avail = this.canvas.height - this.topY - 8;
-    let upGap = 22;
-    if (nUp > 1) upGap = Math.min(22, Math.max(6, (avail - this.cardH) / (nUp - 1)));
-    let y = this.topY;
-    for (const c of pile) { out.push({ x, y }); y += c.up ? upGap : 8; }
-    return out;
-  }
-  cardIndexAt(pi, y) {
-    const layout = this.pileLayout(pi);
-    for (let i = layout.length - 1; i >= 0; i--) {
-      if (y >= layout[i].y && y < layout[i].y + this.cardH) return i;
-    }
-    return -1;
-  }
-  isRunFrom(pi, ci) {
-    const pile = this.piles[pi];
-    for (let i = ci; i < pile.length; i++) {
-      if (!pile[i].up) return false;
-      if (i > ci && pile[i].rank !== pile[i - 1].rank - 1) return false;
-    }
-    return true;
-  }
-  canPlace(run, destPile) {
-    const pile = this.piles[destPile];
-    if (pile.length === 0) return true;
-    const top = pile[pile.length - 1];
-    return top.up && top.rank === run[0].rank + 1;
-  }
-  afterMove() {
-    for (let p = 0; p < 10; p++) {
-      const pile = this.piles[p];
-      if (pile.length < 13) continue;
-      const top = pile.slice(-13);
-      let full = true;
-      for (let i = 0; i < 13; i++) if (!top[i].up || top[i].rank !== 13 - i) { full = false; break; }
-      if (full) {
-        this.piles[p] = pile.slice(0, pile.length - 13);
-        const np = this.piles[p];
-        if (np.length && !np[np.length - 1].up) np[np.length - 1].up = true;
-        this.completed++;
-      }
-    }
-  }
-  tryMove(destPile) {
-    const sel = this.selected;
-    if (!sel) return false;
-    if (sel.pile === destPile) { this.selected = null; return false; }
-    const src = this.piles[sel.pile];
-    const run = src.slice(sel.index);
-    if (!this.canPlace(run, destPile)) return false;
-    this.piles[destPile] = this.piles[destPile].concat(run);
-    this.piles[sel.pile] = src.slice(0, sel.index);
-    const ns = this.piles[sel.pile];
-    if (ns.length && !ns[ns.length - 1].up) ns[ns.length - 1].up = true;
-    this.selected = null;
-    this.afterMove();
-    return true;
-  }
-  deal() {
-    if (this.stock.length === 0) return;
-    for (let p = 0; p < 10; p++) if (this.piles[p].length === 0) return;
-    for (let p = 0; p < 10; p++) { const c = this.stock.pop(); c.up = true; this.piles[p].push(c); }
-    this.selected = null;
-    this.afterMove();
-  }
-  handleClick(e) {
-    const p = canvasPos(this.canvas, e);
-    if (this.completed >= 8) { this.reset(); this.draw(); return; }
-    const sr = this.stockRect;
-    if (p.x >= sr.x && p.x <= sr.x + sr.w && p.y >= sr.y && p.y <= sr.y + sr.h) { this.deal(); this.draw(); return; }
-    const pi = Math.floor((p.x - this.left) / this.pileW);
-    if (pi < 0 || pi >= 10) return;
-    const ci = this.cardIndexAt(pi, p.y);
-    if (ci === -1) {
-      if (this.selected) this.tryMove(pi);
-      this.draw();
-      return;
-    }
-    const card = this.piles[pi][ci];
-    if (!card.up) { this.selected = null; this.draw(); return; }
-    if (this.selected && this.tryMove(pi)) { this.draw(); return; }
-    if (this.isRunFrom(pi, ci)) this.selected = { pile: pi, index: ci };
-    else this.selected = null;
-    this.draw();
-  }
-  draw() {
-    const ctx = this.ctx;
-    ctx.fillStyle = '#0d6b3a';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    const sr = this.stockRect;
-    ctx.fillStyle = this.stock.length ? '#2a4a7a' : '#333';
-    ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
-    ctx.strokeStyle = '#000'; ctx.strokeRect(sr.x, sr.y, sr.w, sr.h);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Microsoft YaHei"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('发牌 ' + Math.ceil(this.stock.length / 10), sr.x + sr.w / 2, sr.y + sr.h / 2);
-    ctx.textAlign = 'left';
-    ctx.fillText('已完成 ' + this.completed + '/8', 10, sr.y + sr.h / 2);
-    for (let p = 0; p < 10; p++) {
-      const pile = this.piles[p];
-      const layout = this.pileLayout(p);
-      if (pile.length === 0) {
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.strokeRect(this.left + p * this.pileW, this.topY, this.cardW, this.cardH);
-      }
-      for (let i = 0; i < pile.length; i++) {
-        const card = pile[i], pos = layout[i];
-        const sel = this.selected && this.selected.pile === p && i >= this.selected.index;
-        if (card.up) {
-          ctx.fillStyle = sel ? '#ffd400' : '#ffffff';
-          ctx.fillRect(pos.x, pos.y, this.cardW, this.cardH);
-          ctx.strokeStyle = '#000'; ctx.strokeRect(pos.x, pos.y, this.cardW, this.cardH);
-          ctx.fillStyle = '#000'; ctx.font = 'bold 18px "Microsoft YaHei"'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-          ctx.fillText(rankLabel(card.rank), pos.x + this.cardW / 2, pos.y + 4);
-          ctx.fillText('♠', pos.x + this.cardW / 2, pos.y + this.cardH - 24);
-        } else {
-          ctx.fillStyle = '#2a4a7a';
-          ctx.fillRect(pos.x, pos.y, this.cardW, this.cardH);
-          ctx.strokeStyle = '#000'; ctx.strokeRect(pos.x, pos.y, this.cardW, this.cardH);
-        }
-      }
-    }
-    if (this.completed >= 8) {
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-      ctx.fillStyle = '#ffd400'; ctx.font = 'bold 26px "Microsoft YaHei"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('你赢了!点击重新开始', this.canvas.width / 2, this.canvas.height / 2);
-    }
-  }
-}
-
-function rankLabel(r) { return r === 1 ? 'A' : r === 11 ? 'J' : r === 12 ? 'Q' : r === 13 ? 'K' : String(r); }
 function canvasPos(canvas, e) { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
 
 const tetris = new Tetris($('tetris-canvas'));
 const mines = new Minesweeper($('mines-canvas'));
-const spider = new Spider($('spider-canvas'));
 const videoEl = $('video-el');
 
 // ============================================================
@@ -590,7 +423,7 @@ let curProblem = null;
 let typed = '';
 let blockIndex = 0;
 let nAttempted = 0, nCorrect = 0;
-let timeMath = 0, timeTetris = 0, timeVideo = 0, timeMines = 0, timeSpider = 0;
+let timeMath = 0, timeTetris = 0, timeVideo = 0, timeMines = 0;
 let participant = '', session = '';
 let startedAt = null;   // 实验开始时间(点「开始实验」时记录)
 let problemsData = [], blocksData = [], switchesData = [], ratingsData = [];
@@ -604,7 +437,7 @@ const INSTRUCTIONS =
   "欢迎参加本实验!\n\n" +
   "接下来是一个关于「学习」的活动。屏幕会分成两个区域:\n\n" +
   "  左侧 —— 数学练习:这些题目能帮助你锻炼和提高解题能力,对学业很有帮助。\n\n" +
-  "  右侧 —— 游戏或视频:点击右侧顶部的下拉菜单,可选择玩俄罗斯方块、扫雷、蜘蛛纸牌或看视频。\n\n" +
+  "  右侧 —— 游戏或视频:点击右侧顶部的下拉菜单,可选择玩俄罗斯方块、扫雷或看视频。\n\n" +
   "你可以自己决定如何分配时间:做数学、玩游戏或看视频都可以,\n" +
   "随时用鼠标点击对应区域(或按 Tab 键)进行切换。\n\n" +
   "顶部会显示当前阶段和剩余时间。";
@@ -618,7 +451,7 @@ const MAIN_INSTRUCTIONS =
   "现在进入正式实验,共 " + CONFIG.nBlocks + " 个阶段,每个阶段 " + fmtDur(CONFIG.blockSeconds) + "。\n\n" +
   "你可以自由切换:\n" +
   "  点击左侧 → 做数学\n" +
-  "  点击右侧顶部下拉菜单 → 选择俄罗斯方块、扫雷、蜘蛛纸牌或某个视频\n" +
+  "  点击右侧顶部下拉菜单 → 选择俄罗斯方块、扫雷或某个视频\n" +
   "  或按 Tab 键快速切换\n\n" +
   "每个阶段时间到后会自动进入下一阶段。";
 
@@ -640,8 +473,7 @@ function continueInstructions() {
 function populateSelect() {
   const sel = $('dist-select');
   sel.innerHTML = '<option value="tetris">俄罗斯方块</option>' +
-                  '<option value="minesweeper">扫雷</option>' +
-                  '<option value="spider">蜘蛛纸牌</option>';
+                  '<option value="minesweeper">扫雷</option>';
   CONFIG.videos.forEach((src, i) => {
     const opt = document.createElement('option');
     opt.value = 'video:' + i;
@@ -662,7 +494,6 @@ function updateDistractionView() {
   const isVideo = distMode.startsWith('video:');
   $('tetris-canvas').style.display = (distMode === 'tetris') ? 'block' : 'none';
   $('mines-canvas').style.display = (distMode === 'minesweeper') ? 'block' : 'none';
-  $('spider-canvas').style.display = (distMode === 'spider') ? 'block' : 'none';
   $('video-el').style.display = isVideo ? 'block' : 'none';
   $('video-placeholder').style.display = 'none';
 }
@@ -776,7 +607,7 @@ $('dist-select').addEventListener('change', (e) => {
   changeState('distraction', e.target.value);
 });
 
-// 扫雷 / 蜘蛛纸牌 的鼠标交互(左键/右键;仅任务中有效)
+// 扫雷 的鼠标交互(左键/右键;仅任务中有效)
 $('mines-canvas').addEventListener('mousedown', (e) => {
   if (mode !== 'task') return;
   if (activeSide !== 'distraction' || distMode !== 'minesweeper') changeState('distraction', 'minesweeper');
@@ -788,12 +619,6 @@ $('mines-canvas').addEventListener('contextmenu', (e) => {
   if (activeSide !== 'distraction' || distMode !== 'minesweeper') changeState('distraction', 'minesweeper');
   mines.handleMouse(e, true);
 });
-$('spider-canvas').addEventListener('mousedown', (e) => {
-  if (mode !== 'task') return;
-  if (activeSide !== 'distraction' || distMode !== 'spider') changeState('distraction', 'spider');
-  if (e.button === 0) spider.handleClick(e);
-});
-
 // ============================================================
 //  流程
 // ============================================================
@@ -840,8 +665,8 @@ function runNextBlock() {
   showScreen('screen-task');
   blockIndex++;
   nAttempted = 0; nCorrect = 0;
-  timeMath = 0; timeTetris = 0; timeVideo = 0; timeMines = 0; timeSpider = 0;
-  tetris.reset(); mines.reset(); spider.reset();
+  timeMath = 0; timeTetris = 0; timeVideo = 0; timeMines = 0;
+  tetris.reset(); mines.reset();
   activeSide = 'math';
   videoEl.pause();
   updateActiveHighlight();
@@ -858,7 +683,6 @@ function runNextBlock() {
     if (activeSide === 'math') timeMath += dt;
     else if (distMode === 'tetris') timeTetris += dt;
     else if (distMode === 'minesweeper') timeMines += dt;
-    else if (distMode === 'spider') timeSpider += dt;
     else timeVideo += dt;
 
     if (distMode === 'tetris') {
@@ -866,8 +690,6 @@ function runNextBlock() {
       tetris.draw();
     } else if (distMode === 'minesweeper') {
       mines.draw();
-    } else if (distMode === 'spider') {
-      spider.draw();
     }
 
     const remain = (durMs - (ts - start)) / 1000;
@@ -877,7 +699,7 @@ function runNextBlock() {
       blocksData.push({
         block: blockIndex,
         time_math: round3(timeMath), time_tetris: round3(timeTetris), time_video: round3(timeVideo),
-        time_minesweeper: round3(timeMines), time_spider: round3(timeSpider),
+        time_minesweeper: round3(timeMines),
         n_attempted: nAttempted, n_correct: nCorrect,
         accuracy: nAttempted ? round3(nCorrect / nAttempted) : null,
       });
@@ -901,23 +723,22 @@ function buildCSV() {
   const totalTetris = blocksData.reduce((s, b) => s + b.time_tetris, 0);
   const totalVideo = blocksData.reduce((s, b) => s + b.time_video, 0);
   const totalMines = blocksData.reduce((s, b) => s + b.time_minesweeper, 0);
-  const totalSpider = blocksData.reduce((s, b) => s + b.time_spider, 0);
   const totalAttempted = blocksData.reduce((s, b) => s + b.n_attempted, 0);
   const totalCorrect = blocksData.reduce((s, b) => s + b.n_correct, 0);
 
-  row(['participant', 'session', 'block', 'time_math_sec', 'time_tetris_sec', 'time_video_sec', 'time_minesweeper_sec', 'time_spider_sec', 'time_total_sec', 'n_attempted', 'n_correct', 'accuracy', 'boredom']);
+  row(['participant', 'session', 'block', 'time_math_sec', 'time_tetris_sec', 'time_video_sec', 'time_minesweeper_sec', 'time_total_sec', 'n_attempted', 'n_correct', 'accuracy', 'boredom']);
   for (const b of blocksData) {
     const r = ratingsData.find(x => x.block === b.block);
     row([participant, session, b.block,
-         b.time_math, b.time_tetris, b.time_video, b.time_minesweeper, b.time_spider,
-         round3(b.time_math + b.time_tetris + b.time_video + b.time_minesweeper + b.time_spider),
+         b.time_math, b.time_tetris, b.time_video, b.time_minesweeper,
+         round3(b.time_math + b.time_tetris + b.time_video + b.time_minesweeper),
          b.n_attempted, b.n_correct,
          b.n_attempted ? round3(b.n_correct / b.n_attempted) : '',
          r ? r.boredom : '']);
   }
   row([participant, session, 'total',
-       round3(totalMath), round3(totalTetris), round3(totalVideo), round3(totalMines), round3(totalSpider),
-       round3(totalMath + totalTetris + totalVideo + totalMines + totalSpider),
+       round3(totalMath), round3(totalTetris), round3(totalVideo), round3(totalMines),
+       round3(totalMath + totalTetris + totalVideo + totalMines),
        totalAttempted, totalCorrect,
        totalAttempted ? round3(totalCorrect / totalAttempted) : '', '']);
 
