@@ -805,29 +805,32 @@ async function submitData() {
   try {
     if (CONFIG.submitFormat === 'form') {
       // 表单方式:适配 Google Apps Script / Google Forms。
-      // 用 no-cors 发出,避免浏览器跨域读响应报错;数据会送达,但前端无法确认状态。
       const params = new URLSearchParams();
       params.append('participant', participant);
       params.append('session', session);
       params.append('data', JSON.stringify(payload));
-      let sent = false;
+
+      // 1) 可读 fetch:能真正确认服务器是否返回 ok。
+      //    (之前用 no-cors 读不到响应,被插件静默拦截时会误报「已发送」)
       try {
-        await fetch(CONFIG.submitUrl, {
+        const resp = await fetch(CONFIG.submitUrl, {
           method: CONFIG.submitMethod || 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: params,
-          mode: 'no-cors',
         });
-        sent = true;
-      } catch (e) {
-        // fetch 被拦截/网络失败 → 用 sendBeacon 兜底(不读响应,部分拦截场景仍能送达)
-        if (navigator.sendBeacon) {
+        if (resp.ok) { statusEl.textContent = '数据已成功提交 ✓'; return; }
+      } catch (e) { /* 被拦截/网络失败 → 走 sendBeacon 兜底 */ }
+
+      // 2) sendBeacon 兜底(不读响应;返回 true 仅代表已排队,不代表送达)
+      let beaconOk = false;
+      if (navigator.sendBeacon) {
+        try {
           const blob = new Blob([params.toString()], { type: 'application/x-www-form-urlencoded' });
-          sent = navigator.sendBeacon(CONFIG.submitUrl, blob);
-        }
+          beaconOk = navigator.sendBeacon(CONFIG.submitUrl, blob);
+        } catch (e) {}
       }
-      if (sent) {
-        statusEl.textContent = '数据已发送(建议同时下载 CSV 备份)';
+      if (beaconOk) {
+        statusEl.textContent = '数据已发送(无法确认送达,请同时下载 CSV 备份)';
       } else {
         statusEl.textContent = '自动提交失败,请点击下方按钮下载 CSV 回传给主试。';
         highlightDownload();
