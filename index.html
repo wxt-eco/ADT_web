@@ -779,47 +779,6 @@ function highlightDownload() {
   btn.textContent = '下载数据(CSV) — 请回传给主试';
 }
 
-// 用原生表单提交(隐藏 iframe)发送数据:
-// 1) 这是 Apps Script doPost 的标准用法,POST 一定送达 doPost;
-// 2) 不经过 XHR/fetch,多数广告拦截插件拦不到;
-// 3) 无跨域限制,也不受 302 跳转影响。
-function submitViaIframe(url, fields) {
-  return new Promise((resolve) => {
-    const iframe = document.createElement('iframe');
-    iframe.name = 'adt-frame-' + Date.now();
-    iframe.setAttribute('style', 'display:none;width:0;height:0;border:0;');
-    document.body.appendChild(iframe);
-
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = url;
-    form.target = iframe.name;
-    form.style.display = 'none';
-    for (const k in fields) {
-      const inp = document.createElement('input');
-      inp.type = 'hidden';
-      inp.name = k;
-      inp.value = fields[k];
-      form.appendChild(inp);
-    }
-    document.body.appendChild(form);
-
-    let settled = false;
-    const finish = (ok) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      setTimeout(() => { form.remove(); iframe.remove(); }, 1500);
-      resolve(ok);
-    };
-    iframe.addEventListener('load', () => finish(true));
-    iframe.addEventListener('error', () => finish(false));
-    const timer = setTimeout(() => finish(false), 10000);
-
-    form.submit();
-  });
-}
-
 async function submitData() {
   const now = new Date();
   const payload = {
@@ -845,27 +804,42 @@ async function submitData() {
   statusEl.textContent = '正在提交数据...';
   try {
     if (CONFIG.submitFormat === 'form') {
-      // 表单方式:适配 Google Apps Script / Google Forms。
-      // 用原生表单提交(隐藏 iframe),而非 fetch:
-      // 1) 这是 Apps Script doPost 的标准用法,POST 一定送达 doPost;
-      // 2) 不经过 XHR/fetch,多数广告拦截插件拦不到;
-      // 3) 无跨域限制,也不受 302 跳转影响。
-      const fields = {
-        participant: participant,
-        session: session,
-        data: JSON.stringify(payload),
-      };
-      let ok = await submitViaIframe(CONFIG.submitUrl, fields);
-      // iframe 提交失败(网络不通/超时)时,再用 sendBeacon 兜底一次
-      if (!ok && navigator.sendBeacon) {
+      const params = new URLSearchParams();
+      params.append('participant', participant);
+      params.append('session', session);
+      params.append('data', JSON.stringify(payload));
+
+      // 用 fetch 提交:后端(server.py)已开启 CORS,能准确读到服务器是否成功。
+      try {
+        const resp = await fetch(CONFIG.submitUrl, {
+          method: CONFIG.submitMethod || 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params,
+        });
+        if (resp.ok) {
+          const text = (await resp.text()).trim();
+          statusEl.textContent = (text === 'duplicate')
+            ? '数据已提交(该次已记录过,重复提交已忽略)'
+            : '数据已成功提交 ✓';
+          return;
+        }
+        statusEl.textContent = '提交失败(HTTP ' + resp.status + '),请下载 CSV 手动回传。';
+        highlightDownload();
+        return;
+      } catch (e) {
+        // 网络失败/被拦截 → 走 sendBeacon 兜底
+      }
+
+      // sendBeacon 兜底(不读响应,返回 true 仅代表已排队,不代表送达)
+      let beaconOk = false;
+      if (navigator.sendBeacon) {
         try {
-          const params = new URLSearchParams(fields);
           const blob = new Blob([params.toString()], { type: 'application/x-www-form-urlencoded' });
-          ok = navigator.sendBeacon(CONFIG.submitUrl, blob);
+          beaconOk = navigator.sendBeacon(CONFIG.submitUrl, blob);
         } catch (e) {}
       }
-      if (ok) {
-        statusEl.textContent = '数据已提交(建议同时下载 CSV 备份以防万一)';
+      if (beaconOk) {
+        statusEl.textContent = '数据已发送(无法确认送达,请同时下载 CSV 备份)';
       } else {
         statusEl.textContent = '自动提交失败,请点击下方按钮下载 CSV 回传给主试。';
         highlightDownload();
