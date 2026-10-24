@@ -116,10 +116,10 @@
   <h2 id="rating-block-title"></h2>
   <div class="rating-q">上一阶段的数学任务让你感到多无聊?</div>
   <div class="rating-opts">
-    <button class="rating-btn" data-v="1">1 = 完全不无聊</button>
-    <button class="rating-btn" data-v="2">2 = 不无聊</button>
-    <button class="rating-btn" data-v="3">3 = 有点无聊</button>
-    <button class="rating-btn" data-v="4">4 = 非常无聊</button>
+    <button type="button" class="rating-btn" data-v="1">1 = 完全不无聊</button>
+    <button type="button" class="rating-btn" data-v="2">2 = 不无聊</button>
+    <button type="button" class="rating-btn" data-v="3">3 = 有点无聊</button>
+    <button type="button" class="rating-btn" data-v="4">4 = 非常无聊</button>
   </div>
 </div>
 
@@ -135,9 +135,9 @@
 //  CONFIG —— 只改这里即可
 // ============================================================
 const CONFIG = {
-  // 实验时长(原版:60 秒练习 + 5 个 4 分钟块 = 20 分钟)
-  practiceSeconds: 60,
-  blockSeconds: 4 * 60,
+  // 实验时长(测试用:10 秒练习 + 5 个 10 秒块;正式施测改回 60 / 4*60)
+  practiceSeconds: 10,
+  blockSeconds: 10,
   nBlocks: 5,
 
   // 数学题:false 表示结果非负(0~9);true 可出现负数(需按 - 号)
@@ -299,7 +299,7 @@ const videoEl = $('video-el');
 // ============================================================
 //  全局状态
 // ============================================================
-let mode = 'start';                    // start | instructions | practice | task | pause | end
+let mode = 'start';                    // start | instructions | practice | task | rating | end
 let activeSide = 'math';               // 'math' | 'distraction'
 let distMode = 'tetris';               // 'tetris' | 'video:0' ...
 let currentVideoSrc = null;
@@ -525,6 +525,7 @@ function startBlocks() {
 
 function runNextBlock() {
   if (blockIndex >= CONFIG.nBlocks) { endExperiment(); return; }
+  mode = 'task';
   blockIndex++;
   nAttempted = 0; nCorrect = 0;
   timeMath = 0; timeTetris = 0; timeVideo = 0;
@@ -539,7 +540,8 @@ function runNextBlock() {
   const durMs = CONFIG.blockSeconds * 1000;
   let lastTs = start;
   function frame(ts) {
-    const dt = (ts - lastTs) / 1000; lastTs = ts;
+    let dt = (ts - lastTs) / 1000; lastTs = ts;
+    if (dt < 0) dt = 0; else if (dt > 0.5) dt = 0.5;  // 防后台/掉帧导致时间虚高
 
     if (activeSide === 'math') timeMath += dt;
     else if (distMode === 'tetris') timeTetris += dt;
@@ -558,6 +560,7 @@ function runNextBlock() {
         block: blockIndex,
         time_math: round3(timeMath), time_tetris: round3(timeTetris), time_video: round3(timeVideo),
         n_attempted: nAttempted, n_correct: nCorrect,
+        accuracy: nAttempted ? round3(nCorrect / nAttempted) : null,
       });
       askBoredom();
       return;
@@ -571,12 +574,43 @@ function runNextBlock() {
 //  数据:提交 + 下载
 // ============================================================
 function buildCSV() {
-  const header = ['type','block','problem','response','correct','boredom','time_math','time_tetris','time_video','n_attempted','n_correct'];
-  const rows = [header];
-  for (const p of problemsData) rows.push(['problem', p.block, p.problem, p.response, p.correct, '', '', '', '', '', '']);
-  for (const b of blocksData) rows.push(['block', b.block, '', '', '', '', b.time_math, b.time_tetris, b.time_video, b.n_attempted, b.n_correct]);
-  for (const r of ratingsData) rows.push(['rating', r.block, '', '', '', r.boredom, '', '', '', '', '']);
-  return rows.map(r => r.map(csvCell).join(',')).join('\n');
+  const out = [];
+  const row = (arr) => out.push(arr.map(csvCell).join(','));
+
+  // 表1:块级汇总(主要分析用)——每块时间分配、答题数、正确率、无聊程度
+  const totalMath = blocksData.reduce((s, b) => s + b.time_math, 0);
+  const totalTetris = blocksData.reduce((s, b) => s + b.time_tetris, 0);
+  const totalVideo = blocksData.reduce((s, b) => s + b.time_video, 0);
+  const totalAttempted = blocksData.reduce((s, b) => s + b.n_attempted, 0);
+  const totalCorrect = blocksData.reduce((s, b) => s + b.n_correct, 0);
+
+  row(['participant', 'session', 'block', 'time_math_sec', 'time_tetris_sec', 'time_video_sec', 'time_total_sec', 'n_attempted', 'n_correct', 'accuracy', 'boredom']);
+  for (const b of blocksData) {
+    const r = ratingsData.find(x => x.block === b.block);
+    row([participant, session, b.block,
+         b.time_math, b.time_tetris, b.time_video,
+         round3(b.time_math + b.time_tetris + b.time_video),
+         b.n_attempted, b.n_correct,
+         b.n_attempted ? round3(b.n_correct / b.n_attempted) : '',
+         r ? r.boredom : '']);
+  }
+  row([participant, session, 'total',
+       round3(totalMath), round3(totalTetris), round3(totalVideo),
+       round3(totalMath + totalTetris + totalVideo),
+       totalAttempted, totalCorrect,
+       totalAttempted ? round3(totalCorrect / totalAttempted) : '', '']);
+
+  // 表2:逐题明细
+  out.push('');
+  row(['participant', 'session', 'block', 'problem', 'response', 'correct']);
+  for (const p of problemsData) row([participant, session, p.block, p.problem, p.response, p.correct]);
+
+  // 表3:切换记录
+  out.push('');
+  row(['participant', 'session', 'block', 't_sec', 'from', 'to']);
+  for (const s of switchesData) row([participant, session, s.block, s.t, s.from, s.to]);
+
+  return out.join('\n');
 }
 function csvCell(v) {
   v = String(v == null ? '' : v);
@@ -650,6 +684,7 @@ function askBoredom() {
   $('rating-block-title').textContent = '第 ' + blockIndex + ' 块已结束';
 }
 function submitRating(v) {
+  if (mode !== 'rating') return;   // 防止重复/误触导致块被跳过
   ratingsData.push({ block: blockIndex, boredom: v });
   if (blockIndex < CONFIG.nBlocks) runNextBlock();
   else endExperiment();
@@ -669,4 +704,3 @@ function endExperiment() {
 </script>
 </body>
 </html>
-
