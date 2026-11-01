@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ADT 学业勤奋任务</title>
+<title>小活动</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -24,7 +24,15 @@
   .btn:hover { background: #3b7bf0; }
   .btn.danger { background: #e0682d; animation: btnPulse 1.1s ease-in-out infinite; }
   @keyframes btnPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(224,104,45,.65); } 50% { box-shadow: 0 0 0 18px rgba(224,104,45,0); } }
-  #instr-body { max-width: 760px; font-size: 20px; line-height: 1.9; white-space: pre-wrap; }
+  /* 说明页双框 */
+  .instr-cols { display: flex; gap: 22px; width: 100%; max-width: 1100px; align-items: stretch; }
+  .instr-box { flex: 1; background: #1d1d26; border: 1px solid #3a3a4a; border-radius: 14px; padding: 22px 26px; text-align: left; font-size: 19px; line-height: 1.85; white-space: pre-wrap; }
+  .instr-box.full { flex-basis: 100%; }
+  .instr-box h3 { text-align: center; font-size: 24px; color: #ffd400; margin-bottom: 14px; }
+
+  /* 名单校验警示 */
+  .login-warning { color: #ff6b6b; font-size: 18px; background: rgba(224, 40, 40, .15); border: 1px solid #e02020; padding: 10px 18px; border-radius: 8px; animation: shake .4s; }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-6px); } 40%,80% { transform: translateX(6px); } }
 
   .topbar { height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 22px; background: #1d1d24; }
   .topbar.center-top { justify-content: center; }
@@ -58,25 +66,52 @@
   /* 练习(全屏数学) */
   .math-center { height: calc(100% - 54px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; }
   .practice-label { color: #ffd400; font-size: 22px; }
+
+  /* 问卷(模块2 · 有问有答) */
+  .quiz-wrap { height: calc(100% - 54px); overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 30px 24px; gap: 26px; }
+  #quiz-list { width: 100%; max-width: 880px; display: flex; flex-direction: column; gap: 30px; }
+  .quiz-q { text-align: left; }
+  .quiz-title { font-size: 24px; margin-bottom: 14px; }
+  .quiz-opts { display: flex; flex-wrap: wrap; gap: 12px; }
+  .quiz-opt { padding: 10px 18px; border: 1px solid #666; border-radius: 8px; cursor: pointer; font-size: 20px; background: #22242e; user-select: none; }
+  .quiz-opt.selected { background: #2d6cdf; border-color: #2d6cdf; }
+  #btn-quiz-submit:disabled { opacity: .4; cursor: default; }
+
+  /* 备案号(工信部要求:主页底部中央,链接工信部备案系统) */
+  .footer-beian { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; padding: 6px; font-size: 13px; color: #888; z-index: 100; }
+  .footer-beian a { color: #888; text-decoration: none; }
+  .footer-beian a:hover { color: #aaa; }
 </style>
 </head>
 <body>
 
 <!-- 开始页 -->
 <div id="screen-start" class="screen center">
-  <h1>学业勤奋任务</h1>
-  <p class="sub">Academic Diligence Task (Galla et al., 2014)</p>
+  <h1>小活动</h1>
   <div class="form">
-    <label>被试编号 <input id="participant" type="text" value="" placeholder="如 001"></label>
-    <label>场次 <input id="session" type="text" value="001"></label>
+    <label>学校 <input id="f-school" type="text" value="" placeholder="如 阳光小学"></label>
+    <label>年级 <input id="f-grade" type="text" inputmode="numeric" value="" placeholder="如 4"></label>
+    <label>班级 <input id="f-class" type="text" inputmode="numeric" value="" placeholder="如 2"></label>
+    <label>学号 <input id="f-stuid" type="text" inputmode="numeric" maxlength="2" value="" placeholder="2位,如 01"></label>
+    <label>姓名 <input id="f-name" type="text" value="" placeholder="如 张三"></label>
   </div>
-  <button id="btn-start" class="btn">开始实验</button>
+  <div id="login-warning" class="login-warning hidden"></div>
+  <button id="btn-start" class="btn">开始活动</button>
 </div>
 
 <!-- 说明页 -->
 <div id="screen-instructions" class="screen center hidden">
   <h2 id="instr-title"></h2>
-  <div id="instr-body"></div>
+  <div class="instr-cols">
+    <div class="instr-box" id="instr-box-left">
+      <h3 id="instr-left-title"></h3>
+      <div id="instr-left-body"></div>
+    </div>
+    <div class="instr-box" id="instr-box-right">
+      <h3 id="instr-right-title"></h3>
+      <div id="instr-right-body"></div>
+    </div>
+  </div>
   <button id="btn-continue" class="btn">继续(空格)</button>
 </div>
 
@@ -127,9 +162,18 @@
   </div>
 </div>
 
+<!-- 问卷页(模块2 · 有问有答) -->
+<div id="screen-questionnaire" class="screen hidden">
+  <div class="topbar center-top"><span>有问有答</span></div>
+  <div class="quiz-wrap">
+    <div id="quiz-list"></div>
+    <button id="btn-quiz-submit" class="btn">提交</button>
+  </div>
+</div>
+
 <!-- 结束页 -->
 <div id="screen-end" class="screen center hidden">
-  <h2>实验结束,感谢参与!</h2>
+  <h2>活动结束,感谢参与!</h2>
   <div id="submit-status" style="color:#66d9ff;"></div>
   <button id="btn-download" class="btn">下载数据(CSV)</button>
 </div>
@@ -155,16 +199,32 @@ const CONFIG = {
   // "json" = 提交 JSON 给后端;  "form" = 表单编码提交(适配 Google Forms / Apps Script 等)
   submitFormat: "form",
 
-  // ---------- 视频(相对 index.html 的路径,放在 main 文件夹里)----------
+  // 离线模式:网络不好时设 true —— 不尝试上传,结束页点「下载数据(CSV)」保存结果。
+  offlineMode: false,
+
+  // ---------- 视频(相对 index.html 的路径,放在 videos/ 文件夹里)----------
   // 有几个视频,右侧下拉菜单里就有几个选项(以文件名命名),带声音播放。
   videos: [
-    "./喜羊羊与灰太狼.mp4",
-    "./奶龙.mp4",
-    "./小黄人.mp4",
-    "./巴啦啦小魔仙.mp4",
-    "./王者荣耀.mp4",
+    "./videos/功夫兔与菜包狗v1.mp4",
+    "./videos/小小世界v2.mp4",
+    "./videos/王者荣耀混剪v2.mp4",
   ],
 };
+
+// ============================================================
+//  被试名单(由「被试名单.xlsx」生成,列:学校/年级/班级/学号/姓名)
+//  更新名单:改好 xlsx 后,在本文件夹运行 python update_roster.py 自动同步这段。
+// ============================================================
+/* ==== 被试名单(自动生成,勿手改此段) ==== */
+const PARTICIPANTS = [
+  { school: "阳光小学", grade: "4", class: "2", stuid: "23", name: "杜" },
+  { school: "阳光小学", grade: "4", class: "1", stuid: "45", name: "达哇" },
+  { school: "阳光小学", grade: "4", class: "2", stuid: "01", name: "王" },
+  { school: "阳光小学", grade: "5", class: "3", stuid: "33", name: "张" },
+  { school: "阳光小学", grade: "5", class: "2", stuid: "16", name: "马" },
+  { school: "阳光小学", grade: "5", class: "3", stuid: "52", name: "常" },
+];
+/* ==== 被试名单结束 ==== */
 
 // ============================================================
 //  工具
@@ -416,7 +476,7 @@ const videoEl = $('video-el');
 // ============================================================
 //  全局状态
 // ============================================================
-let mode = 'start';                    // start | instructions | practice | task | rating | end
+let mode = 'start';                    // start | instructions | practice | task | rating | questionnaire | end
 let activeSide = 'math';               // 'math' | 'distraction'
 let distMode = 'tetris';               // 'tetris' | 'video:0' ...
 let currentVideoSrc = null;
@@ -426,22 +486,36 @@ let blockIndex = 0;
 let nAttempted = 0, nCorrect = 0;
 let timeMath = 0, timeTetris = 0, timeVideo = 0, timeMines = 0;
 let participant = '', session = '';
-let startedAt = null;   // 实验开始时间(点「开始实验」时记录)
+let identity = null;   // { school, grade, class, stuid, name }
+let startedAt = null;   // 实验开始时间(点「开始活动」时记录)
 let problemsData = [], blocksData = [], switchesData = [], ratingsData = [];
+let questionnaireData = [];
 let blockStartTs = 0;
 let continueCb = null;
 
 // ============================================================
 //  说明文字
 // ============================================================
-const INSTRUCTIONS =
-  "欢迎参加本实验!\n\n" +
-  "接下来是一个关于「学习」的活动。屏幕会分成两个区域:\n\n" +
-  "  左侧 —— 数学练习:这些题目能帮助你锻炼和提高解题能力,对学业很有帮助。\n\n" +
-  "  右侧 —— 游戏或视频:点击右侧顶部的下拉菜单,可选择玩俄罗斯方块、扫雷或看视频。\n\n" +
-  "你可以自己决定如何分配时间:做数学、玩游戏或看视频都可以,\n" +
-  "随时用鼠标点击对应区域(或按 Tab 键)进行切换。\n\n" +
-  "顶部会显示当前阶段和剩余时间。";
+const INSTRUCTIONS = {
+  left: {
+    title: "左侧 · 数学题",
+    body:
+      "左侧是数学练习,题目是两个数相减(例如 7 − 3 = ?)。\n\n" +
+      "· 用键盘输入答案,按回车确认。\n" +
+      "· 答完自动出现下一题,请尽量多做、做对。\n" +
+      "· 这些题目能锻炼你的解题能力,对学习很有帮助。",
+  },
+  right: {
+    title: "右侧 · 游戏和视频",
+    body:
+      "右侧可以玩游戏或看视频,点击右侧顶部的下拉菜单选择:\n\n" +
+      "· 俄罗斯方块 —— 方向键 ←→ 移动、↑ 旋转、↓ 加速、空格 直接落下。\n" +
+      "· 扫雷 —— 鼠标左键开格子、右键插旗,点顶部笑脸重开。\n" +
+      "· 视频 —— 选好后自动播放。\n\n" +
+      "你可以自己决定怎么分配时间:做数学、玩游戏、看视频都可以,\n" +
+      "用鼠标点击左侧或右侧(或按 Tab 键)切换。顶部显示剩余时间。",
+  },
+};
 
 function fmtDur(sec) {
   return sec >= 60 ? (sec / 60) + ' 分钟' : sec + ' 秒';
@@ -459,11 +533,27 @@ const MAIN_INSTRUCTIONS =
 // ============================================================
 //  界面切换
 // ============================================================
-function showInstructions(title, body, onContinue) {
+function showInstructions(title, spec, onContinue) {
   mode = 'instructions';
   showScreen('screen-instructions');
   $('instr-title').textContent = title;
-  $('instr-body').textContent = body;
+  const leftBox = $('instr-box-left'), rightBox = $('instr-box-right');
+  if (typeof spec === 'string') {
+    // 单框(例如「正式开始」的简短提示)
+    leftBox.classList.add('full');
+    rightBox.style.display = 'none';
+    $('instr-left-title').textContent = '';
+    $('instr-left-body').textContent = spec;
+    $('instr-right-title').textContent = '';
+    $('instr-right-body').textContent = '';
+  } else {
+    leftBox.classList.remove('full');
+    rightBox.style.display = '';
+    $('instr-left-title').textContent = spec.left.title;
+    $('instr-left-body').textContent = spec.left.body;
+    $('instr-right-title').textContent = spec.right.title;
+    $('instr-right-body').textContent = spec.right.body;
+  }
   continueCb = onContinue;
 }
 function continueInstructions() {
@@ -623,11 +713,51 @@ $('mines-canvas').addEventListener('contextmenu', (e) => {
 // ============================================================
 //  流程
 // ============================================================
+function validateIdentity() {
+  const school = $('f-school').value.trim();
+  const grade = $('f-grade').value.trim();
+  const cls = $('f-class').value.trim();
+  const stuid = $('f-stuid').value.trim();
+  const name = $('f-name').value.trim();
+
+  if (!school || !grade || !cls || !name) {
+    return { ok: false, msg: '请填写完整的学校、年级、班级、学号和姓名。' };
+  }
+  if (!/^\d{2}$/.test(stuid)) {
+    return { ok: false, msg: '学号必须是 2 位数字(例如 01)。' };
+  }
+  const match = PARTICIPANTS.some(p =>
+    p.school === school && p.grade === grade && p.class === cls &&
+    p.stuid === stuid && p.name === name
+  );
+  if (!match) {
+    return { ok: false, msg: '信息与名单不符,无法进入活动,请重新填写。' };
+  }
+  return { ok: true, msg: '' };
+}
+
 $('btn-start').addEventListener('click', () => {
-  participant = $('participant').value.trim() || '未命名';
-  session = $('session').value.trim() || '001';
+  const r = validateIdentity();
+  if (!r.ok) {
+    const w = $('login-warning');
+    w.textContent = '⚠ ' + r.msg;
+    w.classList.remove('hidden');
+    w.style.animation = 'none'; void w.offsetWidth; w.style.animation = '';
+    return;
+  }
+  $('login-warning').classList.add('hidden');
+
+  const school = $('f-school').value.trim();
+  const grade = $('f-grade').value.trim();
+  const cls = $('f-class').value.trim();
+  const stuid = $('f-stuid').value.trim();
+  const name = $('f-name').value.trim();
+
+  participant = name + '_' + stuid;
+  session = school + '_' + grade + '年级' + cls + '班';
+  identity = { school, grade, class: cls, stuid, name };
   startedAt = new Date();
-  showInstructions('实验说明', INSTRUCTIONS, startPractice);
+  showInstructions('活动说明', INSTRUCTIONS, startPractice);
 });
 $('btn-continue').addEventListener('click', continueInstructions);
 
@@ -753,6 +883,16 @@ function buildCSV() {
   row(['participant', 'session', 'block', 't_sec', 'from', 'to']);
   for (const s of switchesData) row([participant, session, s.block, s.t, s.from, s.to]);
 
+  // 表4:问卷(有问有答)
+  if (questionnaireData.length) {
+    out.push('');
+    row(['participant', 'session', 'question', 'answer']);
+    for (const q of questionnaireData) {
+      const ans = Array.isArray(q.answer) ? q.answer.join('、') : q.answer;
+      row([participant, session, q.question, ans]);
+    }
+  }
+
   return out.join('\n');
 }
 function csvCell(v) {
@@ -765,7 +905,7 @@ function downloadCSV() {
   const blob = new Blob(['﻿' + buildCSV()], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'ADT_' + participant + '_' + session + '_' + Date.now() + '.csv';
+  a.download = 'ADT_' + participant + '_' + Date.now() + '.csv';
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -783,6 +923,7 @@ async function submitData() {
   const payload = {
     meta: {
       participant, session,
+      identity: identity || null,
       startedAt: startedAt ? startedAt.toISOString() : null,
       submittedAt: now.toISOString(),
       startedAtLocal: startedAt ? fmtLocal(startedAt) : null,
@@ -794,10 +935,12 @@ async function submitData() {
     problems: problemsData,
     switches: switchesData,
     ratings: ratingsData,
+    questionnaire: questionnaireData,
   };
+
   const statusEl = $('submit-status');
-  if (!CONFIG.submitUrl) {
-    statusEl.textContent = '未配置提交地址(请填 CONFIG.submitUrl),请点击下方按钮下载数据。';
+  if (CONFIG.offlineMode || !CONFIG.submitUrl) {
+    statusEl.textContent = '离线模式:请点击「下载数据(CSV)」保存本次结果。';
     return;
   }
   statusEl.textContent = '正在提交数据...';
@@ -879,10 +1022,98 @@ function submitRating(v) {
   if (mode !== 'rating') return;   // 防止重复/误触导致块被跳过
   ratingsData.push({ block: blockIndex, boredom: v });
   if (blockIndex < CONFIG.nBlocks) runNextBlock();
-  else endExperiment();
+  else startQuestionnaire();
 }
 document.querySelectorAll('.rating-btn').forEach(btn => {
   btn.addEventListener('click', () => submitRating(parseInt(btn.dataset.v, 10)));
+});
+
+// ============================================================
+//  问卷(模块2 · 有问有答)
+// ============================================================
+const QUIZ = [
+  {
+    title: "1. 你周六玩多长时间电子产品(包括手机、电脑、平板等)?",
+    type: "single",
+    options: ["不玩", "不到1小时", "1~2小时", "2~3小时", "3小时以上"],
+  },
+  {
+    title: "2. 常用谁的手机玩?",
+    type: "single",
+    options: ["自己的手机", "爸爸的手机", "妈妈的手机", "爷爷奶奶的手机", "其他"],
+  },
+  {
+    title: "3. 使用电子产品一般是做什么?(可多选)",
+    type: "multi",
+    options: ["玩游戏", "追剧", "看短视频", "聊天", "网络小说", "做作业", "课外知识", "微博", "小红书", "网购"],
+  },
+];
+
+let quizAnswers = [];
+
+function renderQuiz() {
+  quizAnswers = QUIZ.map(() => null);
+  const list = $('quiz-list');
+  list.innerHTML = '';
+  QUIZ.forEach((q, qi) => {
+    const qDiv = document.createElement('div');
+    qDiv.className = 'quiz-q';
+
+    const t = document.createElement('div');
+    t.className = 'quiz-title';
+    t.textContent = q.title;
+    qDiv.appendChild(t);
+
+    const opts = document.createElement('div');
+    opts.className = 'quiz-opts';
+    q.options.forEach((opt) => {
+      const b = document.createElement('div');
+      b.className = 'quiz-opt';
+      b.textContent = opt;
+      b.addEventListener('click', () => {
+        if (q.type === 'multi') {
+          b.classList.toggle('selected');
+          let cur = quizAnswers[qi];
+          if (!Array.isArray(cur)) cur = [];
+          const idx = cur.indexOf(opt);
+          if (idx >= 0) cur.splice(idx, 1); else cur.push(opt);
+          quizAnswers[qi] = cur;
+        } else {
+          opts.querySelectorAll('.quiz-opt').forEach(x => x.classList.remove('selected'));
+          b.classList.add('selected');
+          quizAnswers[qi] = opt;
+        }
+        updateQuizSubmit();
+      });
+      opts.appendChild(b);
+    });
+    qDiv.appendChild(opts);
+    list.appendChild(qDiv);
+  });
+  updateQuizSubmit();
+}
+
+function quizComplete() {
+  return quizAnswers.every(a => a !== null && a !== '' && (!Array.isArray(a) || a.length > 0));
+}
+
+function updateQuizSubmit() {
+  const btn = $('btn-quiz-submit');
+  const ok = quizComplete();
+  btn.disabled = !ok;
+  btn.style.opacity = ok ? 1 : .4;
+}
+
+function startQuestionnaire() {
+  mode = 'questionnaire';
+  showScreen('screen-questionnaire');
+  renderQuiz();
+}
+
+$('btn-quiz-submit').addEventListener('click', () => {
+  if (!quizComplete()) return;
+  questionnaireData = QUIZ.map((q, i) => ({ question: q.title, type: q.type, answer: quizAnswers[i] }));
+  endExperiment();
 });
 
 // ============================================================
@@ -894,5 +1125,8 @@ function endExperiment() {
   submitData();
 }
 </script>
+
+<!-- 备案号(工信部要求:主页底部中央,点击链接到工信部备案系统) -->
+<div class="footer-beian"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">陕ICP备2026030817号-1</a></div>
 </body>
 </html>
